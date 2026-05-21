@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import MessageStream from './MessageStream'
+import { clearFlagOverride, setFlagOverride } from '../../lib/feature-flags'
 
 // The heavy rich-viewer chunk is lazy-loaded; mock it with a marker so the
 // inline-viewer wiring is asserted without pulling the charts/d3 bundle.
@@ -20,6 +21,7 @@ describe('MessageStream', () => {
 
   afterEach(() => {
     cleanup()
+    clearFlagOverride('FF_CHAT_TIMELINE_V2')
   })
 
   it('renders the provided empty state when there are no turns', () => {
@@ -464,5 +466,37 @@ describe('MessageStream', () => {
     expect(screen.getByText('TypeScript')).toBeTruthy()
     expect(screen.getByText('Copiar')).toBeTruthy()
     expect(screen.queryByTestId('rich-viewer')).toBeNull()
+  })
+
+  it('renders the V2 chronological timeline when FF_CHAT_TIMELINE_V2 is enabled', () => {
+    setFlagOverride('FF_CHAT_TIMELINE_V2', true)
+    render(
+      <MessageStream
+        liveTurn={null}
+        turns={[
+          {
+            id: 'turn-v2',
+            conversation_id: 'conv-1',
+            user_input: 'Renderize o projeto.',
+            trail: [
+              { type: 'iteration_start', i: 1, ts: '2026-05-21T12:00:01.000Z' },
+              { type: 'orchestrator_thought', delta: 'P', total: 'Pensando no pedido', ts: '2026-05-21T12:00:02.000Z' },
+              { type: 'decision', tool: 'generate_image', ts: '2026-05-21T12:00:03.000Z' },
+              { type: 'final_answer', ts: '2026-05-21T12:00:04.000Z' },
+            ],
+            assistant_markdown: 'Pronto.',
+            status: 'done',
+            created_at: '2026-05-21T12:00:00.000Z',
+          },
+        ]}
+      />,
+    )
+
+    // V2 timeline header discloses the chronological occurrence count…
+    expect(screen.getByText(/ocorrências/)).toBeTruthy()
+    // …the decision renders as a tool name, never as a raw-JSON "Passo"…
+    expect(screen.getByText('generate_image')).toBeTruthy()
+    // …and the legacy "Passo N" thinking timeline is not used.
+    expect(screen.queryByText(/^Passo 1$/)).toBeNull()
   })
 })

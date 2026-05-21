@@ -79,4 +79,31 @@ describe('chat orchestrator skill registry', () => {
     expect(ctx.trail.some(event => event.type === 'super_skill_call' && event.skill === 'call_agents_parallel')).toBe(true)
     expect(ctx.trail.some(event => event.type === 'agent_call' && event.agent_key === 'chat_writer')).toBe(true)
   })
+
+  it('summarize_context reports missing history instead of summarising its own prompt', async () => {
+    const summarize = buildSkillRegistry().find(skill => skill.name === 'summarize_context')!
+    const ctx = mockContext()
+
+    const result = await summarize.run({}, ctx)
+
+    expect(result.tool_message.toLowerCase()).toContain('nenhum histórico')
+    expect(ctx.trail.some(event => event.type === 'agent_response' && event.agent_key === 'chat_summarizer')).toBe(true)
+  })
+
+  it('submit_final_answer strips a leaked lexio_agent_package block', async () => {
+    const submit = buildSkillRegistry().find(skill => skill.name === 'submit_final_answer')!
+    const ctx = mockContext()
+    const dirty = [
+      '# Resposta final',
+      '',
+      '```json',
+      JSON.stringify({ lexio_agent_package: { result_markdown: 'x' } }),
+      '```',
+    ].join('\n')
+
+    const result = await submit.run({ markdown: dirty }, ctx)
+
+    expect(result.final_answer).toContain('# Resposta final')
+    expect(result.final_answer).not.toContain('lexio_agent_package')
+  })
 })

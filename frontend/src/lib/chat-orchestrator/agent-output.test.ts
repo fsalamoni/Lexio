@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseAgentOutputPackage } from './agent-output'
+import { parseAgentOutputPackage, stripAgentPackageArtifacts } from './agent-output'
 
 const baseArgs = {
   agentKey: 'chat_writer',
@@ -72,5 +72,34 @@ describe('parseAgentOutputPackage', () => {
     expect(artifact?.artifact_id).toBe('minuta-principal-v2')
     expect(artifact?.download_url).toBeUndefined()
     expect(artifact?.exports?.[0]).toMatchObject({ label: 'DOCX', format: 'docx', status: 'planned' })
+  })
+})
+
+describe('stripAgentPackageArtifacts', () => {
+  it('removes a fenced lexio_agent_package block but keeps the prose', () => {
+    const markdown = [
+      '# Resposta final',
+      '',
+      '```json',
+      JSON.stringify({ lexio_agent_package: { result_markdown: 'x' } }),
+      '```',
+    ].join('\n')
+    const out = stripAgentPackageArtifacts(markdown)
+    expect(out).toContain('# Resposta final')
+    expect(out).not.toContain('lexio_agent_package')
+  })
+
+  it('removes a bare un-fenced lexio_agent_package object', () => {
+    const markdown = `Texto final.\n\n${JSON.stringify({ lexio_agent_package: { result_markdown: 'x' } })}`
+    expect(stripAgentPackageArtifacts(markdown)).toBe('Texto final.')
+  })
+
+  it('keeps a fenced json block that is not an agent package', () => {
+    const markdown = ['Exemplo de config:', '```json', '{"porta": 3000}', '```'].join('\n')
+    expect(stripAgentPackageArtifacts(markdown)).toContain('"porta"')
+  })
+
+  it('returns ordinary markdown untouched', () => {
+    expect(stripAgentPackageArtifacts('## Título\nParágrafo simples.')).toBe('## Título\nParágrafo simples.')
   })
 })

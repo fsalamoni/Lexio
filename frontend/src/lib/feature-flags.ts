@@ -168,6 +168,22 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_CHAT_ARTIFACT_VIEWERS',
     devToggleable: true,
   },
+  {
+    key: 'FF_CHAT_TIMELINE_V2',
+    label: 'Chat: Linha do Tempo V2',
+    description: 'Renderiza a trilha do orquestrador como uma linha do tempo cronológica de ocorrências agrupadas (orquestrador e cada agente em um bloco coerente, sem repetições)',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_TIMELINE_V2',
+    devToggleable: true,
+  },
+  {
+    key: 'FF_CHAT_LEAN_ORCHESTRATION',
+    label: 'Chat: Orquestração Enxuta',
+    description: 'Reduz movimento de agentes desnecessário (resumidor só perto do limite e com histórico real, sem passo extra de redação quando a skill já entregou)',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_LEAN_ORCHESTRATION',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────

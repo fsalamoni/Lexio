@@ -119,6 +119,26 @@ describe('runChatTurn', () => {
     expect(events.find(e => e.type === 'final_answer')).toBeDefined()
   })
 
+  it('strips a leaked lexio_agent_package block from the final answer', async () => {
+    const dirtyMarkdown = [
+      '# Pronto',
+      '',
+      '```json',
+      JSON.stringify({ lexio_agent_package: { result_markdown: 'x' } }),
+      '```',
+    ].join('\n')
+    const llmCall = vi.fn(async () => ({
+      raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: dirtyMarkdown } }),
+      usage: null,
+    })) satisfies OrchestratorLLMCall
+
+    const result = await runChatTurn(makeInput({ llmCall }))
+
+    expect(result.status).toBe('done')
+    expect(result.assistant_markdown).toContain('# Pronto')
+    expect(result.assistant_markdown).not.toContain('lexio_agent_package')
+  })
+
   it('respects maxIterations when the orchestrator never finalises', async () => {
     const events: ChatTrailEvent[] = []
     const llmCall = vi.fn(async () => ({
