@@ -6,7 +6,7 @@ import { runCritic } from './quality'
 import { buildSkillRegistry, listCallableAgentDescriptions } from './skill-registry'
 import { OrchestratorDecisionParseError, parseOrchestratorDecision, renderSkillsManifest } from './tools-adapter'
 import { EFFORT_PRESETS } from './effort-presets'
-import { parseAgentOutputPackage } from './agent-output'
+import { parseAgentOutputPackage, stripAgentPackageArtifacts } from './agent-output'
 import { isOperationalFailureMarkdown } from './operational-failure'
 import { renderCurrentTurnUserContent } from '../chat-context-builder'
 import { isEnabled } from '../feature-flags'
@@ -252,8 +252,12 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
 
       // Auto-summariser: when the budget approaches the threshold, ask the
       // summariser to compact the history. This is a single deterministic
-      // injection per turn — repeated triggers would compound noise.
-      if (budget.usedRatio() >= preset.summarizeAt && !history.some(m => m.tag === 'auto_summary')) {
+      // injection per turn — repeated triggers would compound noise. Lean
+      // orchestration skips it when the history is too small to be worth
+      // compacting.
+      const summaryAlreadyInjected = history.some(m => m.tag === 'auto_summary')
+      const historyWorthSummarising = !isEnabled('FF_CHAT_LEAN_ORCHESTRATION') || history.length >= 8
+      if (budget.usedRatio() >= preset.summarizeAt && !summaryAlreadyInjected && historyWorthSummarising) {
         try {
           const compacted = await injectAutoSummary(history, ctx)
           if (compacted) history = compacted
@@ -294,6 +298,10 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     if (stopReason === 'max_iterations' && budget.exceeded()) stopReason = 'budget'
   }
 
+    // The final answer must never carry a raw lexio_agent_package block —
+    // strip it before any section is appended or the turn is persisted.
+    draft = stripAgentPackageArtifacts(draft)
+
     await ensureRequiredDeliverableBundle({
       input,
       draft,
@@ -308,7 +316,11 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       draft = appendMissingExpectedDeliverableNotice(draft, missingExpected)
     }
 
-    draft = appendLatestArtifactSummary(draft, latestArtifactsByLogicalId)
+    // The V2 timeline surfaces artifacts in the dedicated deliverables panel,
+    // so the inline markdown listing would be a duplicate — skip it then.
+    if (!isEnabled('FF_CHAT_TIMELINE_V2')) {
+      draft = appendLatestArtifactSummary(draft, latestArtifactsByLogicalId)
+    }
 
     const elapsedMs = Date.now() - startedAt
     emitTrail({
@@ -719,20 +731,53 @@ async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Pro
   }
 }
 
+/**
+ * Renders the working history into a transcript string the summariser can
+ * actually compress. Without this the summariser receives no conversation and
+ * ends up "summarising" its own system prompt.
+ */
+function buildHistoryTranscript(history: OrchestratorMessage[]): string {
+  const lines: string[] = []
+  for (const message of history) {
+    if (message.role === 'system') continue
+    const label = message.role === 'user'
+      ? (message.tool_summary ? 'ferramenta' : 'usuário')
+      : 'assistente'
+    const content = message.content.length > 1600
+      ? `${message.content.slice(0, 1599)}…`
+      : message.content
+    lines.push(`[${label}] ${content}`)
+  }
+  const joined = lines.join('\n\n')
+  return joined.length > 24_000 ? `${joined.slice(0, 23_999)}…` : joined
+}
+
 async function injectAutoSummary(history: OrchestratorMessage[], ctx: SkillContext): Promise<OrchestratorMessage[] | null> {
   const skills = buildSkillRegistry()
   const summarize = skills.find(s => s.name === 'summarize_context')
   if (!summarize) return null
-  const result = await summarize.run({}, ctx)
-  return [
-    ...history,
-    {
-      role: 'user',
-      content: result.tool_message,
-      tool_summary: true,
-      tag: 'auto_summary',
-    },
-  ]
+  // Pass the real conversation — the summariser must compress the history,
+  // not its own instruction string.
+  const result = await summarize.run({ transcript: buildHistoryTranscript(history) }, ctx)
+  const summaryMessage: OrchestratorMessage = {
+    role: 'user',
+    content: result.tool_message,
+    tool_summary: true,
+    tag: 'auto_summary',
+  }
+  if (isEnabled('FF_CHAT_LEAN_ORCHESTRATION')) {
+    // Lean: actually reclaim tokens — keep the current user input, the fresh
+    // summary and the most recent tool result; the summary carries the rest.
+    const nonToolUser = history.filter(m => m.role === 'user' && !m.tool_summary)
+    const currentInput = nonToolUser[nonToolUser.length - 1]
+    const mostRecent = history[history.length - 1]
+    const kept: OrchestratorMessage[] = []
+    for (const message of [currentInput, summaryMessage, mostRecent]) {
+      if (message && !kept.includes(message)) kept.push(message)
+    }
+    return kept
+  }
+  return [...history, summaryMessage]
 }
 
 async function forceFinalize(history: OrchestratorMessage[], ctx: SkillContext): Promise<string> {
@@ -793,7 +838,7 @@ function buildOrchestratorSystemPrompt(skills: Skill[], effort: string, expected
     '```',
     '{"tool": "<nome>", "args": { ... }, "rationale": "<explicação curta opcional>"}',
     '```',
-    'Nada além desse objeto. Se você precisar pensar, faça isso silenciosamente e devolva apenas o JSON.',
+    'Nada além desse objeto: o primeiro caractere da resposta deve ser `{` e o último `}`. Não escreva frase, título, raciocínio nem comentário antes ou depois — pense silenciosamente e devolva somente o JSON. (Errado: escrever "Vou analisar..." e depois o JSON. Certo: a resposta inteira é apenas o objeto.)',
     '',
     '**Tools disponíveis:**',
     manifest,
@@ -818,5 +863,11 @@ function buildOrchestratorSystemPrompt(skills: Skill[], effort: string, expected
     '- Se o histórico estiver longo, chame `summarize_context` para liberar tokens.',
     '- Antes de finalizar, se estiver inseguro, chame `critique_draft` com o rascunho atual.',
     '- Nunca invente jurisprudência, doutrina, números de processo ou fatos do caso.',
+    ...(isEnabled('FF_CHAT_LEAN_ORCHESTRATION')
+      ? [
+          '- **Eficiência:** se uma skill já entregou o resultado e um texto suficiente, finalize com `submit_final_answer` diretamente; não chame `chat_writer` apenas para reformular.',
+          '- **Eficiência:** para um pedido simples de um único entregável, vá direto à skill que o produz, sem gastar uma iteração apenas planejando.',
+        ]
+      : []),
   ].join('\n')
 }

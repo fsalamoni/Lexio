@@ -4,7 +4,7 @@ import { dispatchSpecialistAgent } from './dispatch'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import { buildSuperSkills } from './super-skills'
 import { buildSidecarSkills } from './sidecar-skills'
-import { parseAgentOutputPackage } from './agent-output'
+import { parseAgentOutputPackage, stripAgentPackageArtifacts } from './agent-output'
 import { EFFORT_PRESETS } from './effort-presets'
 
 /**
@@ -334,14 +334,16 @@ async function prepareWorkPackageForDelivery(
   return materialized
 }
 
-const summarizeContextSkill: Skill<{ instructions?: string }> = {
+const summarizeContextSkill: Skill<{ instructions?: string; transcript?: string }> = {
   name: 'summarize_context',
-  description: 'Comprime a conversa e resultados intermediários para liberar orçamento de tokens. O retorno substitui o histórico interno do orquestrador na próxima iteração.',
+  description: 'Comprime a conversa e resultados intermediários para liberar orçamento de tokens. O retorno substitui o histórico interno do orquestrador na próxima iteração. Passe `transcript` com o histórico a comprimir.',
   argsHint: {
     instructions: 'aspectos específicos a preservar (opcional)',
+    transcript: 'histórico da conversa a ser comprimido',
   },
   async run(args, ctx) {
     const instructions = String(args.instructions ?? 'Preserve fatos jurídicos relevantes, pedidos do usuário e decisões já tomadas.')
+    const transcript = String(args.transcript ?? '').trim()
     const callEvent: ChatTrailEvent = {
       type: 'agent_call',
       agent_key: 'chat_summarizer',
@@ -350,10 +352,19 @@ const summarizeContextSkill: Skill<{ instructions?: string }> = {
     }
     ctx.emit(callEvent)
 
+    if (!transcript) {
+      // Without the actual conversation there is nothing to compress — report
+      // that instead of letting the summariser hallucinate from its own prompt.
+      const message = 'Resumo não gerado: nenhum histórico foi fornecido em `transcript` para comprimir.'
+      ctx.emit({ type: 'agent_response', agent_key: 'chat_summarizer', output: message, ts: nowIso() })
+      return { tool_message: message }
+    }
+
+    const task = [instructions, '', 'Histórico a comprimir:', transcript].join('\n')
     const onToken = ctx.onAgentToken ? ((delta: string, total: string) => ctx.onAgentToken!('chat_summarizer', delta, total)) : undefined
     const { output, usage } = await dispatchSpecialistAgent({
       agentKey: 'chat_summarizer',
-      task: instructions,
+      task,
       ctx,
       onToken,
     })
@@ -579,7 +590,9 @@ const submitFinalAnswerSkill: Skill<{ markdown?: string }> = {
     markdown: 'resposta final em markdown rico (pt-BR)',
   },
   async run(args, _ctx): Promise<SkillResult> {
-    const markdown = String(args.markdown ?? '').trim()
+    // Strip any leaked lexio_agent_package block at the source — the user-facing
+    // final answer must be clean markdown only.
+    const markdown = stripAgentPackageArtifacts(String(args.markdown ?? '').trim())
     if (!markdown) {
       return { tool_message: 'Erro: submit_final_answer requer "markdown" não vazio.' }
     }

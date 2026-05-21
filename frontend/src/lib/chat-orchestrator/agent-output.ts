@@ -148,8 +148,33 @@ function parsePackageJson(value: string): Record<string, unknown> | null {
   }
 }
 
-function stripPackageBlock(rawOutput: string): string {
+export function stripPackageBlock(rawOutput: string): string {
   return rawOutput.replace(/```(?:json)?\s*[\s\S]*?"lexio_agent_package"[\s\S]*?```/gi, '').trim()
+}
+
+/**
+ * Removes any `lexio_agent_package` JSON from a markdown string that is about to
+ * be shown to the user as the final answer. Unlike `stripPackageBlock` (a blind
+ * regex), this only strips a block when it actually parses as a package — a
+ * fenced ```json block the user legitimately authored is left untouched.
+ *
+ * Handles both fenced blocks and a bare (un-fenced) `{...}` object.
+ */
+export function stripAgentPackageArtifacts(markdown: string): string {
+  if (!markdown) return markdown
+
+  // Fenced blocks: drop only those that parse as a lexio_agent_package.
+  let result = markdown.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (full, inner: string) => (
+    parsePackageJson(inner) ? '' : full
+  ))
+
+  // Bare un-fenced package object (mirrors extractPackagePayload's last branch).
+  const bare = result.match(/\{[\s\S]*"lexio_agent_package"[\s\S]*\}/)
+  if (bare && parsePackageJson(bare[0])) {
+    result = result.replace(bare[0], '')
+  }
+
+  return result.replace(/\n{3,}/g, '\n\n').trim()
 }
 
 function normalizeThought(value: unknown, agentKey: string): NonNullable<ChatAgentWorkPackage['thought']> {
