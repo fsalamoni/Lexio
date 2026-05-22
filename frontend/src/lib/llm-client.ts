@@ -21,6 +21,14 @@ import { PROVIDERS, type ProviderDefinition } from './providers'
 import { getCurrentUserId } from './firestore-service'
 
 const REQUEST_TIMEOUT_MS = 180_000
+/**
+ * Stall guard for streaming responses. The request timeout above only covers
+ * the wait for response headers; once a provider returns 200 it can still
+ * stall the SSE body indefinitely. If no chunk arrives within this window the
+ * stream is treated as a transient failure so the turn fails gracefully
+ * instead of hanging forever.
+ */
+const STREAM_INACTIVITY_TIMEOUT_MS = 120_000
 const MAX_RETRIES = 2
 const MAX_EMPTY_RESPONSE_RETRIES = 2
 const MAX_TOKEN_BUDGET_RETRIES = 2
@@ -633,6 +641,56 @@ interface StreamCompletionResult {
  * Response, dispatching each delta to the supplied callback and returning
  * the cumulative content and usage when the stream finishes.
  */
+/**
+ * Reads one chunk from a streaming response without ever waiting forever: if
+ * the provider stalls the SSE body (no bytes for STREAM_INACTIVITY_TIMEOUT_MS)
+ * this rejects with a transient error, and it also rejects promptly on abort.
+ */
+function readChunkWithGuards(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal | undefined,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener('abort', onAbort)
+      reject(new TransientLLMError(`Stream do provedor estagnou (sem dados por ${STREAM_INACTIVITY_TIMEOUT_MS / 1000}s).`))
+    }, STREAM_INACTIVITY_TIMEOUT_MS)
+
+    function onAbort() {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      reject(new DOMException('Operação cancelada pelo usuário.', 'AbortError'))
+    }
+
+    if (signal?.aborted) {
+      onAbort()
+      return
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+
+    reader.read().then(
+      result => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        resolve(result)
+      },
+      error => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        reject(error as Error)
+      },
+    )
+  })
+}
+
 async function consumeOpenAIStream(
   response: Response,
   onDelta: (delta: string, total: string) => void,
@@ -656,10 +714,7 @@ async function consumeOpenAIStream(
   try {
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      if (signal?.aborted) {
-        throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
-      }
-      const { value, done } = await reader.read()
+      const { value, done } = await readChunkWithGuards(reader, signal)
       if (done) break
       buffered += decoder.decode(value, { stream: true })
 
@@ -695,6 +750,11 @@ async function consumeOpenAIStream(
         separatorIndex = buffered.indexOf('\n\n')
       }
     }
+  } catch (streamErr) {
+    // Cancel the body so a stalled or aborted connection is torn down
+    // instead of lingering, then surface the failure to the caller.
+    try { await reader.cancel() } catch { /* noop */ }
+    throw streamErr
   } finally {
     try { reader.releaseLock() } catch { /* noop */ }
   }
