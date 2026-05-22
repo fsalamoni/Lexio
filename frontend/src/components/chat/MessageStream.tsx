@@ -546,30 +546,33 @@ function OrchestratorThinkingTimeline({
         live && 'animate-fade-in',
       )}
     >
-      <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-indigo-700">
-        <Brain className="h-3.5 w-3.5" />
-        Pensamento do orquestrador
-        {live && <CircleDot className="h-3 w-3 animate-pulse text-indigo-500" />}
-      </div>
-      <div className="flex max-h-56 flex-col gap-2 overflow-y-auto text-xs leading-5 text-indigo-900/80">
-        {segments.map((segment, segmentIdx) => {
-          const lines = (segment.text || 'Analisando o pedido…').split(/\r?\n/).filter(Boolean)
-          return (
-            <div key={`${segment.ts}-${segmentIdx}`} className="rounded-xl bg-white/45 px-3 py-2">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-indigo-500">
-                Passo {segmentIdx + 1}
+      {/* Thoughts collapse by default — the user expands them on demand. */}
+      <details>
+        <summary className="flex cursor-pointer select-none items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-indigo-700">
+          <Brain className="h-3.5 w-3.5" />
+          Pensamento do orquestrador
+          {live && <CircleDot className="h-3 w-3 animate-pulse text-indigo-500" />}
+        </summary>
+        <div className="mt-2 flex max-h-56 flex-col gap-2 overflow-y-auto text-xs leading-5 text-indigo-900/80">
+          {segments.map((segment, segmentIdx) => {
+            const lines = (segment.text || 'Analisando o pedido…').split(/\r?\n/).filter(Boolean)
+            return (
+              <div key={`${segment.ts}-${segmentIdx}`} className="rounded-xl bg-white/45 px-3 py-2">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-indigo-500">
+                  Passo {segmentIdx + 1}
+                </div>
+                <div className="whitespace-pre-wrap">
+                  {lines.map((line, idx) => (
+                    <div key={idx} className={clsx('py-0.5', live && segmentIdx === segments.length - 1 && 'animate-stream-line')}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="whitespace-pre-wrap">
-                {lines.map((line, idx) => (
-                  <div key={idx} className={clsx('py-0.5', live && segmentIdx === segments.length - 1 && 'animate-stream-line')}>
-                    {line}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      </details>
       {live && (
         <div className="mt-2 flex items-center gap-1.5 text-[10px] text-indigo-400">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />

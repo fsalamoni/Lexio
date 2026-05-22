@@ -4,8 +4,9 @@
  * Renders the projected `TrailStep[]` as a single vertical timeline of grouped
  * occurrences. The orchestrator and every called agent appear as one coherent
  * card (thought + action + result + artifacts), in chronological order, with
- * no repeated rows. Nothing is hidden — thoughts render in an open `<details>`
- * and grouped steps disclose their event count. Gated behind FF_CHAT_TIMELINE_V2.
+ * no repeated rows. Nothing is hidden — thoughts render in a collapsed
+ * `<details>` the user can expand, and grouped steps disclose their event
+ * count. Gated behind FF_CHAT_TIMELINE_V2.
  */
 
 import {
@@ -132,7 +133,7 @@ function TrailStepCard({ step }: { step: TrailStep }) {
         ) : null}
 
         {hasThought && (
-          <details open className="mt-1.5 rounded-md border border-[var(--v2-border)] bg-[rgba(15,23,42,0.02)] px-2.5 py-1.5">
+          <details className="mt-1.5 rounded-md border border-[var(--v2-border)] bg-[rgba(15,23,42,0.02)] px-2.5 py-1.5">
             <summary className="cursor-pointer select-none text-[11px] font-semibold text-[var(--v2-ink-strong)]">
               {step.kind === 'orchestrator_decision' ? 'Pensamento do orquestrador' : 'Pensamento do agente'}
             </summary>
