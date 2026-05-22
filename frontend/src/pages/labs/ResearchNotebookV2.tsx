@@ -7491,6 +7491,20 @@ Instruções:
                   model: models.video_image_generator || undefined,
                   aspectRatio: '16:9',
                 })
+                const notebookId = activeNotebook?.id
+                if (notebookId) {
+                  await appendNotebookExecutions(notebookId, 'video_pipeline', [{
+                    phase: 'media_image_generation',
+                    agent_name: 'Gerador de Imagens',
+                    model: result.model,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    cost_usd: result.cost_usd,
+                    duration_ms: 0,
+                    provider_id: result.provider_id,
+                    provider_label: result.provider_label,
+                  }])
+                }
                 toast.success(`Imagem da cena ${sceneNumber} gerada!`)
                 return result.imageDataUrl
               } catch (error) {
@@ -7529,6 +7543,22 @@ Instruções:
                   voice: 'nova',
                 })
                 const audioDataUrl = await blobToDataUrl(result.audioBlob)
+                const notebookId = activeNotebook?.id
+                if (notebookId) {
+                  // TTS providers don't report cost; estimate at the tts-1 rate
+                  // ($0.015 / 1k chars), matching the audio pipeline's estimate.
+                  await appendNotebookExecutions(notebookId, 'video_pipeline', [{
+                    phase: 'media_tts_generation',
+                    agent_name: 'Narrador TTS',
+                    model: result.model || models.video_tts || DEFAULT_OPENROUTER_TTS_MODEL,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    cost_usd: (cleanText.length / 1000) * 0.015,
+                    duration_ms: 0,
+                    provider_id: result.provider_id,
+                    provider_label: result.provider_label,
+                  }])
+                }
                 toast.success(`Narração da cena ${sceneNumber} gerada!`)
                 return audioDataUrl
               } catch (error) {
