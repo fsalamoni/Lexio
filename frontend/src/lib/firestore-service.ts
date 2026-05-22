@@ -575,6 +575,10 @@ const dashboardRepository = createDashboardRepository({
   listThesisAnalysisSessions: thesesRepository.listThesisAnalysisSessions,
   listAcervoDocuments: acervoRepository.listAcervoDocuments,
   listResearchNotebooks: researchNotebookRepository.listResearchNotebooks,
+  // Lazily reference chatRepository (declared further down) so the cost
+  // breakdown can fan out into chat conversation turns.
+  listChatConversations: (uid, opts) => chatRepository.listChatConversations(uid, opts),
+  listChatTurns: (uid, conversationId) => chatRepository.listChatTurns(uid, conversationId),
 })
 
 export const getStats = dashboardRepository.getStats

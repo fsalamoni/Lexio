@@ -486,6 +486,10 @@ export default function CostTokensPage() {
         total_cost_usd: costUsd,
         total_cost_brl: costBrl,
         exchange_rate_brl: breakdown.exchange_rate_brl,
+        // Period spend is a turn-level concept surfaced only on the general
+        // budget card; per-section sub-breakdowns do not derive it.
+        month_cost_usd: 0,
+        today_cost_usd: 0,
         total_tokens_in: func?.tokens_in ?? agentItems.reduce((s, i) => s + i.tokens_in, 0),
         total_tokens_out: func?.tokens_out ?? agentItems.reduce((s, i) => s + i.tokens_out, 0),
         total_tokens: func?.total_tokens ?? agentItems.reduce((s, i) => s + i.total_tokens, 0),
@@ -545,14 +549,12 @@ export default function CostTokensPage() {
   // ── Budget status ──────────────────────────────────────────────────────
   const budgetStatus = useMemo<{ monthly: { spend: number; limit: number; pct: number; status: BudgetStatus }; daily: { spend: number; limit: number; pct: number; status: BudgetStatus } } | null>(() => {
     if (!breakdown) return null
-    // We need raw executions for accurate period filtering, but CostBreakdown doesn't carry them.
-    // Approximate: total_cost_usd is lifetime, so we use it as the monthly upper bound.
-    // For a real implementation, we'd filter by created_at. For now, use the total as approximation.
     const monthlyLimit = budgetConfig.monthly_limit_usd ?? 0
     const dailyLimit = budgetConfig.daily_limit_usd ?? 0
     const warningPct = budgetConfig.warning_threshold_pct ?? 80
-    const monthlySpend = breakdown.total_cost_usd // approximation — real would filter by month
-    const dailySpend = monthlySpend / 30 // rough daily average
+    // Real period spend — buildCostBreakdown filters executions by created_at.
+    const monthlySpend = breakdown.month_cost_usd ?? 0
+    const dailySpend = breakdown.today_cost_usd ?? 0
 
     const mPct = monthlyLimit > 0 ? (monthlySpend / monthlyLimit) * 100 : 0
     const dPct = dailyLimit > 0 ? (dailySpend / dailyLimit) * 100 : 0

@@ -60,6 +60,10 @@ export interface CostBreakdownItem {
 export interface CostBreakdown extends UsageSummary {
   total_cost_brl: number
   exchange_rate_brl: number
+  /** Cost incurred since the first day of the current month. */
+  month_cost_usd: number
+  /** Cost incurred today (since local midnight). */
+  today_cost_usd: number
   by_provider: CostBreakdownItem[]
   by_model: CostBreakdownItem[]
   by_function: CostBreakdownItem[]
@@ -698,6 +702,8 @@ export function buildCostBreakdown(
     ...summary,
     total_cost_brl: round2(summary.total_cost_usd * exchangeRateBrl),
     exchange_rate_brl: exchangeRateBrl,
+    month_cost_usd: round6(getCurrentMonthSpend(executions)),
+    today_cost_usd: round6(getTodaySpend(executions)),
     by_provider: aggregateBreakdown(executions, execution => getExecutionProviderKey(execution), execution => getExecutionProviderLabel(execution), exchangeRateBrl),
     by_model: aggregateBreakdown(executions, execution => execution.model || 'unknown_model', execution => execution.model_label, exchangeRateBrl),
     by_function: aggregateBreakdown(executions, execution => execution.function_key, execution => execution.function_label, exchangeRateBrl),
@@ -989,6 +995,69 @@ export function extractNotebookUsageExecutions(notebook: NotebookUsageSummary): 
       created_at: notebook.created_at,
       phase: 'caderno_pesquisa_total',
       agent_name: 'Caderno de Pesquisa (consolidado)',
+      tokens_in: tokensIn,
+      tokens_out: tokensOut,
+      cost_usd: costUsd,
+    }),
+  ]
+}
+
+export interface ChatTurnUsageSummary {
+  id?: string
+  conversation_id?: string
+  created_at: string
+  llm_executions?: UsageExecutionRecord[]
+  usage_summary?: Partial<UsageSummary>
+}
+
+/**
+ * Flatten a chat conversation turn into usage executions for the cost page.
+ * Turns persist `llm_executions` written by the orchestrator runtime; each
+ * record keeps its own `function_key` (chat_orchestrator, chat_multimodal_analysis,
+ * …) so the cost breakdown attributes it to the right pipeline instead of
+ * collapsing every chat call into one bucket.
+ */
+export function extractChatTurnExecutions(turn: ChatTurnUsageSummary): UsageExecutionRecord[] {
+  if (Array.isArray(turn.llm_executions) && turn.llm_executions.length > 0) {
+    return turn.llm_executions.map(execution => createUsageExecutionRecord({
+      source_type: execution.function_key ?? 'chat_orchestrator',
+      source_id: execution.source_id ?? turn.conversation_id ?? turn.id ?? `chat-turn-${turn.created_at}`,
+      created_at: execution.created_at ?? turn.created_at,
+      phase: execution.phase ?? 'chat_orchestrator',
+      agent_name: execution.agent_name ?? 'Orquestrador (Chat)',
+      model: execution.model,
+      provider_id: execution.provider_id,
+      provider_label: execution.provider_label,
+      requested_model: execution.requested_model,
+      resolved_model: execution.resolved_model,
+      tokens_in: execution.tokens_in,
+      tokens_out: execution.tokens_out,
+      cost_usd: execution.cost_usd,
+      duration_ms: execution.duration_ms,
+      execution_state: execution.execution_state,
+      retry_count: execution.retry_count,
+      used_fallback: execution.used_fallback,
+      fallback_from: execution.fallback_from,
+      runtime_profile: execution.runtime_profile,
+      runtime_hints: execution.runtime_hints,
+      runtime_concurrency: execution.runtime_concurrency,
+      runtime_cap: execution.runtime_cap,
+    }))
+  }
+
+  const tokensIn = turn.usage_summary?.total_tokens_in ?? 0
+  const tokensOut = turn.usage_summary?.total_tokens_out ?? 0
+  const costUsd = turn.usage_summary?.total_cost_usd ?? 0
+
+  if (tokensIn <= 0 && tokensOut <= 0 && costUsd <= 0) return []
+
+  return [
+    createUsageExecutionRecord({
+      source_type: 'chat_orchestrator',
+      source_id: turn.conversation_id ?? turn.id ?? `chat-turn-${turn.created_at}`,
+      created_at: turn.created_at,
+      phase: 'chat_orchestrator',
+      agent_name: 'Orquestrador (Chat)',
       tokens_in: tokensIn,
       tokens_out: tokensOut,
       cost_usd: costUsd,
