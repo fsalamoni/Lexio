@@ -22,8 +22,8 @@ describe('TrailTimeline', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders one card per step, with thought visible and grouped counts disclosed', () => {
-    render(
+  it('renders one card per step, with thought collapsed by default and grouped counts disclosed', () => {
+    const { container } = render(
       <TrailTimeline
         live={false}
         steps={[
@@ -47,7 +47,11 @@ describe('TrailTimeline', () => {
 
     expect(screen.getAllByText('Orquestrador').length).toBeGreaterThan(0)
     expect(screen.getByText('chat_image_generator')).toBeTruthy()
-    // Thought is visible without interaction (details open by default).
+    // Thought renders inside a collapsed <details> the user can expand —
+    // nothing is hidden from the DOM, it just starts closed.
+    const details = container.querySelector('details')
+    expect(details).toBeTruthy()
+    expect(details?.hasAttribute('open')).toBe(false)
     expect(screen.getByText('Raciocínio do orquestrador')).toBeTruthy()
     // The decision renders as a tool name, never as a raw JSON "Passo".
     expect(screen.getByText('generate_image')).toBeTruthy()

@@ -879,6 +879,8 @@ function buildOrchestratorSystemPrompt(skills: Skill[], effort: string, expected
       ? [
           '- **Eficiência:** se uma skill já entregou o resultado e um texto suficiente, finalize com `submit_final_answer` diretamente; não chame `chat_writer` apenas para reformular.',
           '- **Eficiência:** para um pedido simples de um único entregável, vá direto à skill que o produz, sem gastar uma iteração apenas planejando.',
+          '- **Critério para especialistas:** antes de chamar `call_agent`, avalie se aquele especialista agrega profundidade, expertise específica ou verificação independente que você não entregaria sozinho com a mesma qualidade. Se a subtarefa for direta e você já tem o necessário, resolva-a você mesmo e siga em frente — não gaste uma chamada. Acione um especialista apenas quando há margem real de aprimoramento ou aprofundamento da entrega.',
+          '- **Latência:** cada chamada é uma ida e volta ao provedor. Agrupe subtarefas independentes em um único `call_agents_parallel` em vez de encadeá-las, e busque o menor número de iterações que ainda entregue o resultado completo — reduzir movimento sem sacrificar qualidade.',
         ]
       : []),
   ].join('\n')
