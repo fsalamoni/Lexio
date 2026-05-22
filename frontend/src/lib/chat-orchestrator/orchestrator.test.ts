@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ChatTrailEvent } from '../firestore-types'
+import type { UsageExecutionRecord } from '../cost-analytics'
+import { clearRuntimeFeatureFlags, setRuntimeFeatureFlags } from '../feature-flags'
 import { runChatTurn } from './orchestrator'
 import type { OrchestratorLLMCall } from './types'
 
@@ -137,6 +139,49 @@ describe('runChatTurn', () => {
     expect(result.status).toBe('done')
     expect(result.assistant_markdown).toContain('# Pronto')
     expect(result.assistant_markdown).not.toContain('lexio_agent_package')
+  })
+
+  it('runs the orchestrator uncapped under lean orchestration — no token cap, no auto-summary', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_LEAN_ORCHESTRATION: true })
+    try {
+      // 6M tokens on the first call would trip the 150k `medio` cap — lean
+      // orchestration must ignore it so the orchestrator finalises on its own.
+      const heavyUsage: UsageExecutionRecord = {
+        source_type: 'chat_orchestrator',
+        source_id: 't',
+        created_at: '2026-05-21T12:00:00.000Z',
+        function_key: 'chat_orchestrator',
+        function_label: 'Orquestrador (Chat)',
+        phase: 'chat_orchestrator',
+        phase_label: 'Chat: orquestrador',
+        agent_name: 'chat_orchestrator',
+        model: 'demo/x',
+        model_label: 'demo/x',
+        tokens_in: 3_000_000,
+        tokens_out: 3_000_000,
+        total_tokens: 6_000_000,
+        cost_usd: 1,
+        duration_ms: 5,
+      }
+      const events: ChatTrailEvent[] = []
+      let call = 0
+      const llmCall = vi.fn(async () => {
+        call += 1
+        return call === 1
+          ? { raw: JSON.stringify({ tool: 'call_agent', args: { agent_key: 'chat_planner', task: 'planejar' } }), usage: heavyUsage }
+          : { raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# ok' } }), usage: null }
+      }) satisfies OrchestratorLLMCall
+
+      const result = await runChatTurn(makeInput({ llmCall, onTrail: e => events.push(e) }))
+
+      expect(result.status).toBe('done')
+      expect(result.assistant_markdown).toContain('# ok')
+      expect(events.some(e => e.type === 'budget_hit')).toBe(false)
+      expect(events.some(e => e.type === 'agent_call' && e.agent_key === 'chat_summarizer')).toBe(false)
+      expect(llmCall).toHaveBeenCalledTimes(2)
+    } finally {
+      clearRuntimeFeatureFlags()
+    }
   })
 
   it('respects maxIterations when the orchestrator never finalises', async () => {

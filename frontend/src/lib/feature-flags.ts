@@ -179,7 +179,7 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
   {
     key: 'FF_CHAT_LEAN_ORCHESTRATION',
     label: 'Chat: Orquestração Enxuta',
-    description: 'Reduz movimento de agentes desnecessário (resumidor só perto do limite e com histórico real, sem passo extra de redação quando a skill já entregou)',
+    description: 'O orquestrador roda sem teto de tokens (ele comanda todo o trabalho) e sem resumidor automático; reduz movimento de agentes desnecessário e o passo extra de redação quando a skill já entregou',
     defaultEnabled: false,
     envVar: 'VITE_FF_CHAT_LEAN_ORCHESTRATION',
     devToggleable: true,

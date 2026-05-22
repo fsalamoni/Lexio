@@ -45,6 +45,10 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
 
   const preset = EFFORT_PRESETS[input.effort]
   const budget = createBudget(preset.maxTokens)
+  // The orchestrator commands the whole turn — under lean orchestration it is
+  // never token-capped and never force-summarised: only an explicit hard stop
+  // (user cancel) or the iteration ceiling end the loop.
+  const leanOrchestration = isEnabled('FF_CHAT_LEAN_ORCHESTRATION')
   const skills = buildSkillRegistry()
   const skillsByName = new Map<string, Skill>(skills.map(s => [s.name, s]))
   const llmCall = input.llmCall ?? callOrchestratorLLM
@@ -250,26 +254,27 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
         break
       }
 
-      // Auto-summariser: when the budget approaches the threshold, ask the
-      // summariser to compact the history. This is a single deterministic
-      // injection per turn — repeated triggers would compound noise. Lean
-      // orchestration skips it when the history is too small to be worth
-      // compacting.
-      const summaryAlreadyInjected = history.some(m => m.tag === 'auto_summary')
-      const historyWorthSummarising = !isEnabled('FF_CHAT_LEAN_ORCHESTRATION') || history.length >= 8
-      if (budget.usedRatio() >= preset.summarizeAt && !summaryAlreadyInjected && historyWorthSummarising) {
-        try {
-          const compacted = await injectAutoSummary(history, ctx)
-          if (compacted) history = compacted
-        } catch {
-          // best-effort
+      // Auto-summariser + token cap. The orchestrator drives all the work, so
+      // under lean orchestration it is never token-capped and never
+      // force-summarised — it runs until it finalises (or hits the iteration
+      // ceiling). Without lean, the legacy budget cap + auto-summary apply.
+      if (!leanOrchestration) {
+        const summaryAlreadyInjected = history.some(m => m.tag === 'auto_summary')
+        if (budget.usedRatio() >= preset.summarizeAt && !summaryAlreadyInjected) {
+          try {
+            const compacted = await injectAutoSummary(history, ctx)
+            if (compacted) history = compacted
+          } catch {
+            // best-effort
+          }
         }
       }
 
-      if (budget.exceeded()) {
+      const hardStopped = budget.isHardStopped()
+      if (hardStopped.stopped || (!leanOrchestration && budget.exceeded())) {
         emitTrail({
           type: 'budget_hit',
-          reason: budget.isHardStopped().reason ?? 'token_cap_reached',
+          reason: hardStopped.reason ?? 'token_cap_reached',
           ts: new Date().toISOString(),
           elapsed_ms: Date.now() - startedAt,
         })
@@ -295,7 +300,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
         `**Detalhe técnico:** ${message}`,
       ].join('\n')
     }
-    if (stopReason === 'max_iterations' && budget.exceeded()) stopReason = 'budget'
+    if (stopReason === 'max_iterations' && !leanOrchestration && budget.exceeded()) stopReason = 'budget'
   }
 
     // The final answer must never carry a raw lexio_agent_package block —
@@ -764,18 +769,6 @@ async function injectAutoSummary(history: OrchestratorMessage[], ctx: SkillConte
     content: result.tool_message,
     tool_summary: true,
     tag: 'auto_summary',
-  }
-  if (isEnabled('FF_CHAT_LEAN_ORCHESTRATION')) {
-    // Lean: actually reclaim tokens — keep the current user input, the fresh
-    // summary and the most recent tool result; the summary carries the rest.
-    const nonToolUser = history.filter(m => m.role === 'user' && !m.tool_summary)
-    const currentInput = nonToolUser[nonToolUser.length - 1]
-    const mostRecent = history[history.length - 1]
-    const kept: OrchestratorMessage[] = []
-    for (const message of [currentInput, summaryMessage, mostRecent]) {
-      if (message && !kept.includes(message)) kept.push(message)
-    }
-    return kept
   }
   return [...history, summaryMessage]
 }
