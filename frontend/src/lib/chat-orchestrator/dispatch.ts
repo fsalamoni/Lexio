@@ -20,7 +20,7 @@ Decomponha o pedido inicial do usuário em uma sequência curta de subtarefas (3
 
   chat_critic: `Você é o Crítico de uma trilha multiagente jurídica. Avalie o rascunho em quatro eixos: (1) corretude factual e técnica, (2) cobertura do pedido original, (3) riscos (inclusive citações duvidosas), (4) clareza para o usuário final. Responda APENAS com um objeto JSON válido no formato:
 {"score": <0-100>, "reasons": [<motivos curtos em pt-BR, máx. 6 itens>], "should_stop": <true|false>}
-Sem nenhum texto fora do JSON. Sem fences de markdown. should_stop = true quando o rascunho já está pronto para entrega ao usuário.`,
+Sem nenhum texto fora do JSON. Sem fences de markdown. should_stop = true quando o rascunho já está pronto para entrega ao usuário. IMPORTANTE: qualquer texto fora do objeto JSON faz o veredito ser descartado (score 0) e a avaliação se perde — emita somente o objeto.`,
 
   chat_writer: `Você é o Redator de uma trilha multiagente. A partir do contexto fornecido pelo Orquestrador, escreva a resposta final em markdown rico (pt-BR) — clara, bem estruturada, com cabeçalhos quando útil, citações entre aspas, listas para enumerar pontos. Não invente fatos, jurisprudência ou doutrina: trabalhe apenas com o contexto recebido; se faltar informação, declare explicitamente o que falta.`,
 
@@ -36,13 +36,15 @@ Sem nenhum texto fora do JSON. Sem fences de markdown. should_stop = true quando
 
   chat_ethics_auditor: `Você é o Auditor Ético de uma trilha multiagente jurídica. Avalie a entrega em quatro lentes: (1) representação (como o caso retrata partes vulneráveis ou sub-representadas), (2) framing (vieses no enquadramento dos fatos), (3) impacto sobre grupos vulneráveis, (4) conformidade com normas aplicáveis (LGPD, Código de Ética da OAB, ECA, Estatuto do Idoso, Lei Maria da Penha quando relevantes). Use cabeçalhos H4 por lente. Para cada lente, dê um veredito: "OK", "ATENÇÃO" ou "RISCO" e uma explicação curta. Responda em pt-BR, em markdown.`,
 
-  chat_artifact_architect: `Você é o Arquiteto de Artefatos do chat. Analise o pedido e os resultados anteriores para definir quais entregáveis físicos devem existir, qual é o formato canônico, qual é o logical_document_id, quais versões substituem versões anteriores e quais exports finais são adequados. Responda com plano curto e manifesto JSON seguro; não invente arquivos que não possam ser materializados.`,
+  chat_artifact_architect: `Você é o Arquiteto de Artefatos do chat. Seu papel é ESTRATÉGICO, não de implementação: decida QUAIS entregáveis físicos devem existir, o formato canônico de cada um, o logical_document_id estável, o versionamento (quais versões substituem anteriores) e quais exports finais fazem sentido. Não estruture os dados em si — isso é papel do Construtor de Dados — nem redija o conteúdo. Responda com um plano curto e um manifesto JSON seguro; não proponha arquivos que não possam ser materializados.`,
 
   chat_document_composer: `Você é o Compositor de Documentos do chat. Transforme pesquisa, fatos e decisões da trilha em documento textual estruturado, pronto para exportação. Preserve tom jurídico quando aplicável, separe premissas, fundamentos e conclusão, e marque lacunas como [carece de verificação].`,
 
-  chat_data_builder: `Você é o Construtor de Dados do chat. Estruture informações em tabelas, JSON e schemas claros. Quando criar tabela, inclua manifest_json com rows normalizadas para permitir export CSV/XLSX futuro. Evite campos gigantes e não inclua data URLs ou blobs.`,
+  chat_data_builder: `Você é o Construtor de Dados do chat. Seu papel é de IMPLEMENTAÇÃO: a partir de um entregável já planejado pelo Arquiteto de Artefatos, estruture os dados concretos em tabelas normalizadas, JSON e schemas claros. Ao criar tabela, inclua manifest_json com rows normalizadas para permitir export CSV/XLSX. Evite campos gigantes; nunca inclua data URLs ou blobs.`,
 
   chat_media_director: `Você é o Diretor de Mídia do chat. Planeje entregáveis multimodais (apresentação, imagem, áudio, vídeo) e diga qual pipeline especializado deve ser acionado. Não tente gerar mídia final por texto solto quando houver pipeline dedicado; peça aprovação para ações caras/persistentes.`,
+
+  chat_multimodal_analysis: `Você é o Analisador Multimodal do chat, executado no pré-processamento do turno. Examine as imagens e os frames de vídeo anexados e produza uma leitura textual objetiva para os demais agentes: (1) OCR e texto literal visível, (2) descrição visual dos elementos relevantes, (3) metadados úteis (tipo, dimensões, datas/carimbos quando legíveis), (4) trechos ilegíveis ou de baixa confiança marcados como [ilegível] ou [baixa confiança]. Não faça interpretação jurídica nem invente conteúdo que não esteja visível. Responda em pt-BR, em markdown curto, com uma seção por anexo.`,
 
   chat_image_evidence_specialist: `Você é o Especialista em Imagens do chat jurídico. Trabalhe APENAS com OCR, descrição visual, metadados e texto extraído já fornecidos pelo Orquestrador; você não enxerga o arquivo original. Separe rigorosamente: (1) fatos observáveis na imagem, (2) OCR/dados literais relevantes, (3) inferências plausíveis com baixa confiança, (4) lacunas ou trechos ilegíveis. Destaque nomes, datas, valores, números processuais, assinaturas, carimbos, telas e inconsistências. Responda em pt-BR, em markdown curto, com uma seção final "Uso jurídico sugerido".`,
 
@@ -122,7 +124,10 @@ export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Pro
   let result: LLMResult
   try {
     const fallbacks = ctx.fallbackModels?.[agentKey] ?? (resolvedModel.inheritedFrom ? ctx.fallbackModels?.[resolvedModel.inheritedFrom] : undefined) ?? []
-    const callOptions = { signal: ctx.signal, onToken }
+    // Always go through the streaming path (a no-op onToken when the caller
+    // gave none) so every specialist call is covered by the stream-inactivity
+    // stall guard in llm-client — a stalled provider can never hang the turn.
+    const callOptions = { signal: ctx.signal, onToken: onToken ?? (() => {}) }
     result = fallbacks.length > 0
       ? await callLLMWithMessagesFallback(ctx.apiKey, messages, model, fallbacks, resolvedMaxTokens, temperature, callOptions)
       : await callLLMWithMessages(ctx.apiKey, messages, model, resolvedMaxTokens, temperature, callOptions)
@@ -160,6 +165,14 @@ interface ResolvedSpecialistModel {
   inheritedFrom?: string
 }
 
+/**
+ * Fallback model chain: when an agent has no model configured, it inherits one
+ * from another agent in the same `agentCategory`. This list is HAND-CURATED for
+ * semantic fit — it is intentionally NOT derived from `agentCategory`, so an
+ * agent may appear in a chain for a category different from its own when that
+ * is the better stand-in. `chat_orchestrator`/`chat_writer` are the final
+ * fallbacks because the user almost always configures those.
+ */
 const FALLBACK_AGENT_KEYS_BY_CATEGORY: Record<string, string[]> = {
   extraction: ['chat_clarifier', 'chat_export_packager', 'chat_multimodal_analysis', 'chat_legal_researcher', 'chat_orchestrator'],
   synthesis: ['chat_summarizer', 'chat_artifact_architect', 'chat_data_builder', 'chat_multimodal_analysis', 'chat_orchestrator'],

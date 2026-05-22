@@ -244,8 +244,15 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
             )
             draft = null
             continue
-          } catch {
-            // best-effort — accept draft if critic fails
+          } catch (criticErr) {
+            if (criticErr instanceof DOMException && criticErr.name === 'AbortError') throw criticErr
+            // best-effort — accept the draft, but record on the trail that the
+            // quality gate did not run, instead of swallowing it silently.
+            emitTrail({
+              type: 'error',
+              message: `Crítico não pôde avaliar o rascunho: ${criticErr instanceof Error ? criticErr.message : String(criticErr)}`,
+              ts: new Date().toISOString(),
+            })
             stopReason = 'final_answer'
             break
           }
@@ -288,10 +295,14 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
       draft = await forceFinalize(history, ctx)
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') throw err
-      const message = err instanceof Error ? err.message : String(err)
+      const rawMessage = err instanceof Error ? err.message : String(err)
+      // Cap embedded strings so a pathological error / huge input cannot bloat
+      // or corrupt the persisted turn record.
+      const message = rawMessage.length > 600 ? `${rawMessage.slice(0, 599)}…` : rawMessage
       emitTrail({ type: 'error', message: `Finalização forçada falhou: ${message}`, ts: new Date().toISOString() })
       const userInputs = history.filter(m => !m.tool_summary && m.role === 'user').map(m => m.content)
-      const lastUser = userInputs[userInputs.length - 1] ?? input.user_input
+      const rawLastUser = userInputs[userInputs.length - 1] ?? input.user_input
+      const lastUser = rawLastUser.length > 600 ? `${rawLastUser.slice(0, 599)}…` : rawLastUser
       draft = [
         'Não consegui concluir a trilha multiagente completa, mas o turno ficou salvo para nova tentativa.',
         '',
@@ -389,17 +400,25 @@ function recordDecisionAndDetectLoop(
 }
 
 function buildDecisionLoopKey(decision: OrchestratorDecision): string {
-  return `${decision.tool}:${stableStringify(decision.args)}`
+  try {
+    return `${decision.tool}:${stableStringify(decision.args)}`
+  } catch {
+    // Pathological args must never crash the loop-detection guard.
+    return `${decision.tool}:[args-não-serializáveis]`
+  }
 }
 
-function stableStringify(value: unknown): string {
+function stableStringify(value: unknown, depth = 0): string {
+  // Depth cap: decision args come from parsed LLM JSON; a cap keeps a
+  // pathologically nested object from overflowing the stack.
+  if (depth > 12) return '"[profundidade-excedida]"'
   if (value === null || typeof value !== 'object') {
     const primitive = JSON.stringify(value)
     return typeof primitive === 'string' ? primitive : String(value)
   }
-  if (Array.isArray(value)) return `[${value.map(item => stableStringify(item)).join(',')}]`
+  if (Array.isArray(value)) return `[${value.map(item => stableStringify(item, depth + 1)).join(',')}]`
   const record = value as Record<string, unknown>
-  return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(',')}}`
+  return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${stableStringify(record[key], depth + 1)}`).join(',')}}`
 }
 
 function appendLatestArtifactSummary(

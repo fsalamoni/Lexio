@@ -6,11 +6,20 @@ import type { AgentModelDef } from '../../model-config'
  * Chat Orchestrator pipeline — multi-agent conversational engine that powers
  * the `/chat` page. The orchestrator decomposes the user request, dispatches
  * specialists in parallel/sequence, summarises history when budget tightens,
- * runs a critic, and emits the final answer. Specialists are invoked through
+ * runs a critic, and emits the final answer. Every agent is configured through
  * the same scoped-model loading pipeline as every other Lexio pipeline.
  *
- * PR1 ships the agent registry, settings and config card. The runtime loop
- * itself lands in PR2.
+ * The agents below fall into distinct execution groups:
+ *  - `chat_orchestrator` and `chat_critic` run through dedicated runtime paths
+ *    (the orchestration loop and the critic pass), not via `call_agent`.
+ *  - The text specialists (planner, researcher, writer, evidence specialists,
+ *    …) are invoked via the `call_agent` skill — see `CALLABLE_AGENT_KEYS`.
+ *  - `chat_multimodal_analysis` / `chat_audio_transcription` are preprocessing
+ *    agents that run before the main loop on attachments.
+ *  - `chat_image_generator`, `chat_audio_generator`, `chat_presentation_designer`
+ *    and `chat_video_generator` are media-routing agents: they are produced
+ *    only through the `generate_image` / `generate_audio` / `generate_presentation`
+ *    / `generate_video` super-skills, never called directly via `call_agent`.
  */
 export const CHAT_ORCHESTRATOR_AGENT_DEFS: AgentModelDef[] = [
   {
