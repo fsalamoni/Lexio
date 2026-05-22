@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildCostBreakdown, createUsageExecutionRecord, getPhaseLabel } from './cost-analytics'
+import { buildCostBreakdown, createUsageExecutionRecord, extractChatTurnExecutions, getPhaseLabel } from './cost-analytics'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from './pipelines/agent-definitions/chat-orchestrator'
 
 describe('cost analytics coverage', () => {
@@ -99,5 +99,46 @@ describe('cost analytics coverage', () => {
       }
     }
     expect(unmapped).toEqual([])
+  })
+
+  it('flattens chat conversation turns into per-pipeline usage executions', () => {
+    const executions = extractChatTurnExecutions({
+      id: 'turn-1',
+      conversation_id: 'conv-1',
+      created_at: '2026-05-20T10:00:00.000Z',
+      llm_executions: [
+        createUsageExecutionRecord({ source_type: 'chat_orchestrator', source_id: 'turn-1', phase: 'chat_orchestrator', agent_name: 'Orquestrador', model: 'anthropic/claude-opus-4', cost_usd: 0.4 }),
+        createUsageExecutionRecord({ source_type: 'chat_multimodal_analysis', source_id: 'turn-1', phase: 'chat_multimodal_analysis', agent_name: 'Analisador multimodal', model: 'openai/gpt-4o-mini', cost_usd: 0.02 }),
+      ],
+    })
+    expect(executions).toHaveLength(2)
+    // Each record keeps its own function key so the cost page attributes it to
+    // the right pipeline instead of collapsing all chat calls into one bucket.
+    expect(executions.map(item => item.function_key)).toEqual(['chat_orchestrator', 'chat_multimodal_analysis'])
+    expect(executions[0].cost_usd).toBeCloseTo(0.4, 6)
+  })
+
+  it('synthesizes a chat usage record from a turn summary when executions are absent', () => {
+    const executions = extractChatTurnExecutions({
+      id: 'turn-2',
+      conversation_id: 'conv-1',
+      created_at: '2026-05-20T11:00:00.000Z',
+      usage_summary: { total_tokens_in: 1200, total_tokens_out: 800, total_cost_usd: 0.15 },
+    })
+    expect(executions).toHaveLength(1)
+    expect(executions[0].function_key).toBe('chat_orchestrator')
+    expect(executions[0].total_tokens).toBe(2000)
+    expect(extractChatTurnExecutions({ id: 't', created_at: '2026-05-20T12:00:00.000Z' })).toEqual([])
+  })
+
+  it('exposes current-month and today spend on the cost breakdown', () => {
+    const breakdown = buildCostBreakdown([
+      createUsageExecutionRecord({ source_type: 'chat_orchestrator', source_id: 't', created_at: new Date().toISOString(), phase: 'chat_orchestrator', agent_name: 'Orquestrador', cost_usd: 0.5 }),
+      createUsageExecutionRecord({ source_type: 'document_generation', source_id: 'd', created_at: '2020-01-01T00:00:00.000Z', phase: 'redacao', agent_name: 'redator', cost_usd: 0.9 }),
+    ])
+    expect(breakdown.total_cost_usd).toBeCloseTo(1.4, 6)
+    // Only the recent execution lands inside the current-month / today windows.
+    expect(breakdown.month_cost_usd).toBeCloseTo(0.5, 6)
+    expect(breakdown.today_cost_usd).toBeCloseTo(0.5, 6)
   })
 })

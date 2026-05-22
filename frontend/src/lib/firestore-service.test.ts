@@ -2105,6 +2105,7 @@ describe('dashboard stats facade', () => {
           },
         },
       ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
 
     const result = await getCostBreakdown(uid)
 
@@ -2115,6 +2116,33 @@ describe('dashboard stats facade', () => {
       'acervo_classificador',
       'caderno_pesquisa',
     ]))
+  })
+
+  it('includes chat orchestrator turns in the user cost breakdown', async () => {
+    mockGetDocs
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        { id: 'conv-1', data: { title: 'Conversa', created_at: '2026-05-07T09:00:00.000Z', updated_at: '2026-05-07T09:30:00.000Z' } },
+      ]))
+      .mockResolvedValueOnce(makeGetDocsSnapshot([
+        {
+          id: 'turn-1',
+          data: {
+            conversation_id: 'conv-1',
+            created_at: '2026-05-07T09:10:00.000Z',
+            llm_executions: [makeUsageExecution({ source_type: 'chat_orchestrator', function_key: 'chat_orchestrator', source_id: 'turn-1', phase: 'chat_orchestrator', agent_name: 'Orquestrador', cost_usd: 0.6 })],
+          },
+        },
+      ]))
+
+    const result = await getCostBreakdown(uid)
+
+    const chatFunc = result.by_function.find(item => item.key === 'chat_orchestrator')
+    expect(chatFunc?.cost_usd).toBeCloseTo(0.6, 6)
+    expect(result.total_cost_usd).toBeCloseTo(0.6, 6)
   })
 })
 
