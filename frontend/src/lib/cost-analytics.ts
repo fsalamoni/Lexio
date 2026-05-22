@@ -269,6 +269,15 @@ const PHASE_LABELS: Record<string, string> = {
   chat_artifact_generation: 'Chat: Geração de artefatos',
   chat_export_materialization: 'Chat: Materialização de exports',
   chat_multimodal_analysis: 'Chat: Análise multimodal',
+  chat_image_generator: 'Chat: Gerador de Imagem Literal',
+  chat_image_evidence_specialist: 'Chat: Especialista em Imagens',
+  chat_audio_evidence_specialist: 'Chat: Especialista em Áudio',
+  chat_video_evidence_specialist: 'Chat: Especialista em Vídeo',
+  chat_multimodal_evidence_synthesizer: 'Chat: Síntese Multimodal',
+  chat_audio_transcription: 'Chat: Transcritor de Áudio',
+  chat_audio_generator: 'Chat: Gerador de Áudio Literal',
+  chat_presentation_designer: 'Chat: Designer de Apresentação',
+  chat_video_generator: 'Chat: Gerador de Vídeo Literal',
 }
 
 const STUDIO_ARTIFACT_LABELS: Record<string, string> = {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildCostBreakdown, createUsageExecutionRecord, getPhaseLabel } from './cost-analytics'
+import { CHAT_ORCHESTRATOR_AGENT_DEFS } from './pipelines/agent-definitions/chat-orchestrator'
 
 describe('cost analytics coverage', () => {
   it('formats dynamic studio phases with human-friendly labels', () => {
@@ -84,5 +85,19 @@ describe('cost analytics coverage', () => {
       'Chat: Análise multimodal',
     ]))
     expect(breakdown.by_phase.find(item => item.key === 'chat_export_materialization')?.label).toBe('Chat: Materialização de exports')
+  })
+
+  it('maps every chat orchestrator agent to a human-friendly phase label', () => {
+    const unmapped: string[] = []
+    for (const def of CHAT_ORCHESTRATOR_AGENT_DEFS) {
+      const label = getPhaseLabel(def.key)
+      // The generic fallback in getPhaseLabel returns the key with underscores
+      // replaced by spaces. A real label must differ from that and be prefixed
+      // with "Chat:" so cost analytics never surfaces a raw key like "chat fs actor".
+      if (label === def.key.replace(/_/g, ' ') || !label.startsWith('Chat:')) {
+        unmapped.push(def.key)
+      }
+    }
+    expect(unmapped).toEqual([])
   })
 })

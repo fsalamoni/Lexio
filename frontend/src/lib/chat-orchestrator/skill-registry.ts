@@ -8,9 +8,14 @@ import { parseAgentOutputPackage, stripAgentPackageArtifacts } from './agent-out
 import { EFFORT_PRESETS } from './effort-presets'
 
 /**
- * Agent keys callable through the `call_agent` skill. The orchestrator,
- * critic, and preprocessing agents are intentionally excluded because they
- * run through dedicated runtime paths.
+ * Agent keys callable through the `call_agent` skill. Intentionally excluded:
+ *  - `chat_orchestrator`, `chat_critic` — run through dedicated runtime paths
+ *    (the orchestration loop and the critic pass);
+ *  - `chat_multimodal_analysis`, `chat_audio_transcription` — preprocessing
+ *    agents that run before the main loop on attachments;
+ *  - `chat_image_generator`, `chat_audio_generator`, `chat_presentation_designer`,
+ *    `chat_video_generator` — media-routing agents reached only through the
+ *    `generate_*` super-skills, never via `call_agent`.
  */
 export const CALLABLE_AGENT_KEYS = new Set<string>([
   'chat_planner',
