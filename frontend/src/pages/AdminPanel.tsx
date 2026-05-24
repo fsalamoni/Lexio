@@ -39,6 +39,9 @@ import PresentationPipelineConfigCard from '../components/PresentationPipelineCo
 import PresentationV2PipelineConfigCard from '../components/PresentationV2PipelineConfigCard'
 import ChatOrchestratorConfigCard from '../components/ChatOrchestratorConfigCard'
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
+import DocumentV4PipelineConfigCard from '../components/admin/DocumentV4PipelineConfigCard'
+import DocumentV4ToolsConfigCard from '../components/admin/DocumentV4ToolsConfigCard'
+import { isEnabled as isFeatureEnabled } from '../lib/feature-flags'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
 import MultimodalPolicyCard from '../components/admin/MultimodalPolicyCard'
 import RuntimeFeatureFlagsCard from '../components/admin/RuntimeFeatureFlagsCard'
@@ -1021,6 +1024,34 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <DocumentV3PipelineConfigSection />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Document V4 Pipeline Config — gated by FF_DOCUMENT_GENERATION_V4 */}
+      {IS_FIREBASE && isFeatureEnabled('FF_DOCUMENT_GENERATION_V4') && (
+        <AdminCollapsibleSection
+          id="section_document_v4_pipeline_config"
+          title="Pipeline de Documentos v4 — Modelo do agente único"
+          icon={Brain}
+          iconColor="text-teal-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <DocumentV4PipelineConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Document V4 Tools Config — gated by FF_DOCUMENT_GENERATION_V4 */}
+      {IS_FIREBASE && isFeatureEnabled('FF_DOCUMENT_GENERATION_V4') && (
+        <AdminCollapsibleSection
+          id="section_document_v4_tools_config"
+          title="Ferramentas do agente v4 — catálogo"
+          icon={Brain}
+          iconColor="text-teal-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <DocumentV4ToolsConfigCard />
         </AdminCollapsibleSection>
       )}
 

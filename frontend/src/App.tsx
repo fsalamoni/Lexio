@@ -20,6 +20,7 @@ const DashboardV2 = lazy(() => import('./pages/labs/DashboardV2'))
 const DocumentList = lazy(() => import('./pages/DocumentList'))
 const NewDocument = lazy(() => import('./pages/NewDocument'))
 const NewDocumentV3 = lazy(() => import('./pages/NewDocumentV3'))
+const NewDocumentV4 = lazy(() => import('./pages/NewDocumentV4'))
 const DocumentDetail = lazy(() => import('./pages/DocumentDetail'))
 const DocumentEditor = lazy(() => import('./pages/DocumentEditor'))
 const Upload = lazy(() => import('./pages/Upload'))
@@ -95,6 +96,7 @@ function AuthenticatedShell() {
         <Route path="/documents" element={<DocumentList />} />
         <Route path="/documents/new" element={<DefaultNewDocumentPage />} />
         <Route path="/documents/new-v3" element={<Navigate to="/documents/new" replace />} />
+        {IS_FIREBASE && <Route path="/documents/new-v4" element={<NewDocumentV4 />} />}
         <Route path="/documents/:id" element={<DocumentDetail />} />
         <Route path="/documents/:id/edit" element={<DocumentEditor />} />
         <Route path="/upload" element={<Upload />} />

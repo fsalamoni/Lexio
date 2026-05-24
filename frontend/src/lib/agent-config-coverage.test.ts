@@ -8,6 +8,7 @@ import {
   CHAT_ORCHESTRATOR_AGENT_DEFS,
   CONTEXT_DETAIL_AGENT_DEFS,
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
+  DOCUMENT_V4_PIPELINE_AGENT_DEFS,
   NOTEBOOK_ACERVO_AGENT_DEFS,
   PIPELINE_AGENT_DEFS,
   PRESENTATION_PIPELINE_AGENT_DEFS,
@@ -32,6 +33,7 @@ describe('user-scoped agent configuration coverage', () => {
     expect(PRESENTATION_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.PRESENTATION_PIPELINE_AGENT_DEFS)
     expect(PRESENTATION_V2_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.PRESENTATION_V2_PIPELINE_AGENT_DEFS)
     expect(DOCUMENT_V3_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.DOCUMENT_V3_PIPELINE_AGENT_DEFS)
+    expect(DOCUMENT_V4_PIPELINE_AGENT_DEFS).toBe(pipelineAgentDefs.DOCUMENT_V4_PIPELINE_AGENT_DEFS)
     expect(CHAT_ORCHESTRATOR_AGENT_DEFS).toBe(pipelineAgentDefs.CHAT_ORCHESTRATOR_AGENT_DEFS)
   })
 
@@ -44,6 +46,7 @@ describe('user-scoped agent configuration coverage', () => {
       'chat_orchestrator_models',
       'context_detail_models',
       'document_v3_models',
+      'document_v4_models',
       'notebook_acervo_models',
       'presentation_pipeline_models',
       'presentation_v2_pipeline_models',
@@ -163,6 +166,11 @@ describe('user-scoped agent configuration coverage', () => {
       'thesis_compilador',
       'thesis_curador',
       'thesis_revisor',
+    ])
+
+    expect(AGENT_CONFIG_DEFS.document_v4_models.map(agent => agent.key)).toEqual([
+      'v4_agent',
+      'v4_critic',
     ])
   })
 

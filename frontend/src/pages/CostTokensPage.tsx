@@ -433,8 +433,8 @@ export default function CostTokensPage() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Split executions into all 11 function keys
-  const { docBreakdown, docV3Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, presentationV2Breakdown, chatOrchestratorBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, presentationV2Breakdown: null, chatOrchestratorBreakdown: null, highlights: [] }
+  const { docBreakdown, docV3Breakdown, docV4Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, presentationV2Breakdown, chatOrchestratorBreakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, docV4Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, presentationV2Breakdown: null, chatOrchestratorBreakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
@@ -442,6 +442,7 @@ export default function CostTokensPage() {
     // The by_agent_function data contains function-keyed agent entries.
     const docItems = breakdown.by_agent_function.filter(item => item.key.startsWith('document_generation::'))
     const docV3Items = breakdown.by_agent_function.filter(item => item.key.startsWith('document_generation_v3::'))
+    const docV4Items = breakdown.by_agent_function.filter(item => item.key.startsWith('document_generation_v4::'))
     const thesisItems = breakdown.by_agent_function.filter(item => item.key.startsWith('thesis_analysis::'))
     const contextDetailItems = breakdown.by_agent_function.filter(item => item.key.startsWith('context_detail::'))
     const acervoClassificadorItems = breakdown.by_agent_function.filter(item => item.key.startsWith('acervo_classificador::'))
@@ -457,6 +458,7 @@ export default function CostTokensPage() {
     // Build approximate sub-breakdowns using available summary data
     const docFunc = breakdown.by_function.find(f => f.key === 'document_generation')
     const docV3Func = breakdown.by_function.find(f => f.key === 'document_generation_v3')
+    const docV4Func = breakdown.by_function.find(f => f.key === 'document_generation_v4')
     const thesisFunc = breakdown.by_function.find(f => f.key === 'thesis_analysis')
     const contextDetailFunc = breakdown.by_function.find(f => f.key === 'context_detail')
     const acervoClassificadorFunc = breakdown.by_function.find(f => f.key === 'acervo_classificador')
@@ -511,6 +513,7 @@ export default function CostTokensPage() {
 
     const docBd = makeSub(docFunc, docItems, 'document_generation')
     const docV3Bd = makeSub(docV3Func, docV3Items, 'document_generation_v3')
+    const docV4Bd = makeSub(docV4Func, docV4Items, 'document_generation_v4')
     const thesisBd = makeSub(thesisFunc, thesisItems, 'thesis_analysis')
     const contextDetailBd = makeSub(contextDetailFunc, contextDetailItems, 'context_detail')
     const acervoClassificadorBd = makeSub(acervoClassificadorFunc, acervoClassificadorItems, 'acervo_classificador')
@@ -543,7 +546,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, presentationV2Breakdown: presentationV2Bd, chatOrchestratorBreakdown: chatOrchestratorBd, highlights: hl }
+    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, docV4Breakdown: docV4Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, presentationV2Breakdown: presentationV2Bd, chatOrchestratorBreakdown: chatOrchestratorBd, highlights: hl }
   }, [breakdown])
 
   // ── Budget status ──────────────────────────────────────────────────────
@@ -866,6 +869,27 @@ export default function CostTokensPage() {
               />
             ) : (
               <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o Novo Documento.</p>
+            )}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            id="section_document_v4"
+            title="Novo Documento (v4)"
+            icon={Sparkles}
+            iconColor="text-teal-600"
+            badge={docV4Breakdown ? fmtUsd(docV4Breakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {docV4Breakdown ? (
+              <SectionBreakdown
+                sectionId="doc_v4"
+                breakdown={docV4Breakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o Novo Documento v4.</p>
             )}
           </CollapsibleSection>
 

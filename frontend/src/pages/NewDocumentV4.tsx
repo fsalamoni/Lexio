@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { FileText, ArrowRight, Sparkles, Hammer } from 'lucide-react'
+import { FileText, ArrowRight, Sparkles, X, Hammer } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTaskManager } from '../contexts/TaskManagerContext'
 import { useToast } from '../components/Toast'
@@ -13,18 +13,20 @@ import {
   getDocumentTypesForProfile, getLegalAreasForProfile,
   getProfile,
 } from '../lib/firestore-service'
-import { createDocumentV3, generateDocumentV3, type GenerationProgressV3 } from '../lib/document-v3-orchestrator'
+import {
+  createDocumentV4,
+  generateDocumentV4,
+  type GenerationProgressV4,
+} from '../lib/document-v4-orchestrator'
 import { ModelUnavailableError, TransientLLMError } from '../lib/llm-client'
 import { ModelsNotConfiguredError } from '../lib/model-config'
 import type { UserProfileForGeneration } from '../lib/generation-service'
-import PipelineProgressPanelV3 from '../components/PipelineProgressPanelV3'
-import AgentTrailProgressModalV3 from '../components/AgentTrailProgressModalV3'
 import {
-  applyDocumentV3PipelineProgress,
-  createDocumentV3PipelineSteps,
-  DOCUMENT_V3_PIPELINE_COMPLETED_PHASE,
-  type DocumentV3PipelineStep,
-} from '../lib/document-v3-pipeline'
+  applyDocumentV4PipelineProgress,
+  createDocumentV4PipelineSteps,
+  DOCUMENT_V4_PIPELINE_COMPLETED_PHASE,
+  type DocumentV4PipelineStep,
+} from '../lib/document-v4-pipeline'
 import { deriveExecutionState, normalizeProgressForExecution } from '../lib/pipeline-execution-contract'
 import { buildWorkspaceDocumentDetailPath, buildWorkspaceSettingsPath } from '../lib/workspace-routes'
 
@@ -33,7 +35,13 @@ interface LegalAreaOption { id: string; name: string; description: string }
 
 const MAX_REQUEST = 2000
 
-export default function NewDocumentV3() {
+export default function NewDocumentV4() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const toast = useToast()
+  const { userId } = useAuth()
+  const { startTask } = useTaskManager()
+
   const [docTypes, setDocTypes] = useState<DocType[]>([])
   const [legalAreas, setLegalAreas] = useState<LegalAreaOption[]>([])
   const [selectedType, setSelectedType] = useState('')
@@ -43,46 +51,54 @@ export default function NewDocumentV3() {
   const [loadingTypes, setLoadingTypes] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [generatedDocId, setGeneratedDocId] = useState<string | null>(null)
-  const [pipelineAgents, setPipelineAgents] = useState<DocumentV3PipelineStep[]>([])
+  const [pipelineSteps, setPipelineSteps] = useState<DocumentV4PipelineStep[]>([])
   const [pipelinePercent, setPipelinePercent] = useState(0)
   const [pipelineMessage, setPipelineMessage] = useState('')
+  const [pipelineIteration, setPipelineIteration] = useState<number | null>(null)
+  const [pipelineTool, setPipelineTool] = useState<string | null>(null)
   const [pipelineComplete, setPipelineComplete] = useState(false)
   const [pipelineError, setPipelineError] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfileForGeneration | null>(null)
-  const agentTimers = useRef<Record<string, number>>({})
+  const stepTimers = useRef<Record<string, number>>({})
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  const { userId } = useAuth()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const toast = useToast()
-  const { startTask } = useTaskManager()
+  const flagOn = isFeatureEnabled('FF_DOCUMENT_GENERATION_V4')
+
+  // Redirect to v2 picker when flag is off — surfaces a clear "not available" path
+  // instead of letting the user submit a v4 request that can't run.
+  useEffect(() => {
+    if (!flagOn) {
+      navigate('/documents/new', { replace: true })
+    }
+  }, [flagOn, navigate])
 
   const formReady = !!selectedType && request.trim().length > 0
 
   const initPipeline = useCallback(() => {
-    setPipelineAgents(createDocumentV3PipelineSteps())
+    setPipelineSteps(createDocumentV4PipelineSteps())
     setPipelinePercent(0)
     setPipelineMessage('')
+    setPipelineIteration(null)
+    setPipelineTool(null)
     setPipelineComplete(false)
     setPipelineError(false)
-    agentTimers.current = {}
+    stepTimers.current = {}
   }, [])
 
-  const handleProgress = useCallback((p: GenerationProgressV3) => {
+  const handleProgress = useCallback((p: GenerationProgressV4) => {
     const now = Date.now()
-    const completed = p.phase === DOCUMENT_V3_PIPELINE_COMPLETED_PHASE || p.executionState === 'completed'
+    const completed = p.phase === DOCUMENT_V4_PIPELINE_COMPLETED_PHASE || p.executionState === 'completed'
     const executionState = completed
       ? 'completed'
       : deriveExecutionState({ progress: p.percent, phase: p.phase, executionState: p.executionState })
     const normalizedPercent = normalizeProgressForExecution({ progress: p.percent, executionState })
     const progressWithState = { ...p, executionState }
-
-    setPipelineAgents(prev => applyDocumentV3PipelineProgress(prev, progressWithState, agentTimers.current, now))
+    setPipelineSteps(prev => applyDocumentV4PipelineProgress(prev, progressWithState, stepTimers.current, now))
     setPipelinePercent(normalizedPercent)
     setPipelineMessage(p.message)
-
-    if (p.phase === DOCUMENT_V3_PIPELINE_COMPLETED_PHASE) {
+    if (typeof p.iteration === 'number') setPipelineIteration(p.iteration)
+    if (typeof p.tool === 'string') setPipelineTool(p.tool)
+    if (p.phase === DOCUMENT_V4_PIPELINE_COMPLETED_PHASE) {
       setPipelinePercent(100)
       setPipelineComplete(true)
     }
@@ -129,33 +145,28 @@ export default function NewDocumentV3() {
     return () => window.removeEventListener('keydown', handler)
   }, [formReady, loading, generating])
 
-  const currentType = docTypes.find((t) => t.id === selectedType)
+  const currentType = docTypes.find(t => t.id === selectedType)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedType || !request.trim() || !userId || !IS_FIREBASE) return
-
     setLoading(true)
     try {
-      const newDoc = await createDocumentV3(userId, {
+      const newDoc = await createDocumentV4(userId, {
         document_type_id: selectedType,
         original_request: request,
         legal_area_ids: selectedAreas.length > 0 ? selectedAreas : null,
       })
-
       initPipeline()
       setGenerating(true)
       setGeneratedDocId(newDoc.id)
       setLoading(false)
-
-      // Per-execution AbortController so the user can cancel the v3 pipeline.
       const controller = new AbortController()
       abortControllerRef.current = controller
-
       const docTypeName = docTypes.find(d => d.id === selectedType)?.name || selectedType
-      startTask(`Gerando documento: ${docTypeName}`, async (onTaskProgress) => {
+      startTask(`Gerando documento v4: ${docTypeName}`, async (onTaskProgress) => {
         try {
-          await generateDocumentV3(
+          await generateDocumentV4(
             userId,
             newDoc.id,
             selectedType,
@@ -164,19 +175,15 @@ export default function NewDocumentV3() {
             null,
             (p) => {
               handleProgress(p)
-              const executionState = deriveExecutionState({
-                progress: p.percent,
-                phase: p.phase,
-                executionState: p.executionState,
-              })
+              const executionState = deriveExecutionState({ progress: p.percent, phase: p.phase, executionState: p.executionState })
               const pct = normalizeProgressForExecution({ progress: p.percent, executionState })
               onTaskProgress({
                 progress: pct,
                 phase: p.message || p.phase,
                 executionState,
                 stageMeta: p.stageMeta,
-                currentStep: p.step,
-                totalSteps: p.totalSteps,
+                currentStep: 1,
+                totalSteps: 4,
               })
             },
             userProfile,
@@ -186,26 +193,21 @@ export default function NewDocumentV3() {
           return newDoc.id
         } catch (err: any) {
           abortControllerRef.current = null
-          // Aborted by user — handled by onCancel UI; suppress noisy error toasts.
-          if (err?.name === 'AbortError') {
-            return newDoc.id
-          }
-          console.error('V3 generation failed:', err)
+          if (err?.name === 'AbortError') return newDoc.id
           setPipelineError(true)
-          setPipelineAgents(prev => prev.map(a =>
-            a.status === 'active' ? { ...a, status: 'error' as const, completedAt: Date.now() } : a,
+          setPipelineSteps(prev => prev.map(s =>
+            s.status === 'active' ? { ...s, status: 'error' as const, completedAt: Date.now() } : s,
           ))
           if (err instanceof ModelsNotConfiguredError) {
-            setPipelineMessage('Modelos v3 não configurados. Vá em Configurações.')
-            toast.warning('Modelos não configurados', err.message)
+            setPipelineMessage('Modelo do agente v4 não configurado. Vá em Configurações.')
+            toast.warning('Modelo não configurado', err.message)
             navigate(buildWorkspaceSettingsPath({ preserveSearch: location.search }))
           } else if (err instanceof ModelUnavailableError) {
-            setPipelineMessage(`Modelo "${err.modelId}" indisponível. Altere-o em Configurações.`)
-            toast.warning(`Modelo indisponível: ${err.modelId}`, 'Vá em Configurações e substitua-o.')
+            setPipelineMessage(`Modelo "${err.modelId}" indisponível.`)
+            toast.warning(`Modelo indisponível: ${err.modelId}`, 'Substitua-o em Configurações.')
           } else if (err instanceof TransientLLMError) {
-            const msg = 'O modelo LLM não respondeu. Tente novamente ou altere o modelo em Configurações.'
-            setPipelineMessage(msg)
-            toast.error('Modelo sem resposta', msg)
+            setPipelineMessage('O modelo LLM não respondeu. Tente novamente ou altere o modelo.')
+            toast.error('Modelo sem resposta', 'Tente novamente em alguns instantes.')
           } else {
             setPipelineMessage(err?.message || 'Erro na geração')
             const { humanizeError } = await import('../lib/error-humanizer')
@@ -222,37 +224,23 @@ export default function NewDocumentV3() {
     }
   }
 
-  const v4FlagOn = isFeatureEnabled('FF_DOCUMENT_GENERATION_V4')
+  if (!flagOn) {
+    // While the redirect effect runs, render an empty shell to avoid flash.
+    return null
+  }
 
   return (
     <div className="space-y-6 v2-bridge-surface">
-      {v4FlagOn && (
-        <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 flex items-start gap-3">
-          <Hammer className="h-4 w-4 text-teal-700 mt-0.5 shrink-0" />
-          <div className="flex-1 text-sm text-teal-900">
-            <strong>Disponível em paralelo:</strong> pipeline v4 experimental (agente único + ferramentas).
-            Mais econômico em casos simples, mantém qualidade via crítico opcional.
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate('/documents/new-v4')}
-            className="shrink-0 inline-flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-900"
-          >
-            Experimentar v4
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
       <V2PageHero
-        eyebrow={<><FileText className="h-3.5 w-3.5" /> Novo Documento</>}
-        title="Pipeline supervisionada multi-agente em 4 fases"
-        description="Compreensão · Análise · Pesquisa · Redação. Agentes paralelos por fase, supervisor com retry automático e contexto compartilhado para reduzir alucinações."
+        eyebrow={<><FileText className="h-3.5 w-3.5" /> Novo Documento (v4 — experimental)</>}
+        title="Agente único + ferramentas, com crítico opcional"
+        description="Um modelo reasoning-tier decide quando buscar acervo, jurisprudência e web. Reduz custo e latência mantendo a qualidade jurídica via crítico evaluator-optimizer."
         aside={(
           <div className="space-y-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Pipeline</p>
             <div className="rounded-[1.4rem] bg-[rgba(245,241,232,0.92)] px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Versão</p>
-              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">v3</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">v4</p>
             </div>
             <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Tipo</p>
@@ -266,7 +254,7 @@ export default function NewDocumentV3() {
         items={[
           { label: 'Tipo documental', value: currentType?.name || 'Pendente', helper: 'Selecione a estrutura', icon: FileText, tone: selectedType ? 'accent' : 'default' },
           { label: 'Áreas selecionadas', value: selectedAreas.length.toLocaleString('pt-BR'), helper: selectedAreas.length > 0 ? 'Filtro jurídico ativo' : 'Sem restrição', icon: Sparkles },
-          { label: 'Fases', value: '4', helper: 'Compreensão, Análise, Pesquisa, Redação', icon: Sparkles, tone: 'warm' },
+          { label: 'Arquitetura', value: 'Single-agent', helper: '1 agente + ferramentas em loop', icon: Hammer, tone: 'warm' },
           { label: 'Solicitação', value: `${request.length}/${MAX_REQUEST}`, helper: 'Caracteres', icon: FileText },
         ]}
       />
@@ -344,57 +332,106 @@ export default function NewDocumentV3() {
               ? 'Geração em andamento...'
               : (
                 <span className="inline-flex items-center gap-2">
-                  Gerar documento
+                  Gerar documento v4
                   <kbd className="hidden sm:inline-block text-xs bg-teal-500/30 px-1.5 py-0.5 rounded">Ctrl+Enter</kbd>
                 </span>
               )}
         </button>
       </form>
 
-      <AgentTrailProgressModalV3
-        isOpen={generating}
-        title="Trilha de Geração"
-        subtitle={currentType?.name || selectedType || undefined}
-        currentMessage={pipelineMessage || 'Inicializando agentes...'}
-        percent={pipelinePercent}
-        agents={pipelineAgents}
-        isComplete={pipelineComplete}
-        hasError={pipelineError}
-        canClose={pipelineComplete || pipelineError}
-        onClose={() => {
-          if (pipelineComplete || pipelineError) setGenerating(false)
-        }}
-        onCancel={() => {
-          if (abortControllerRef.current) {
-            abortControllerRef.current.abort()
-            abortControllerRef.current = null
-            setPipelineError(true)
-            setPipelineMessage('Geração cancelada pelo usuário.')
-            setPipelineAgents(prev => prev.map(a =>
-              a.status === 'active' ? { ...a, status: 'error' as const, completedAt: Date.now() } : a,
-            ))
-            toast.info('Geração cancelada', 'A pipeline foi interrompida.')
-          }
-        }}
-      >
-        <PipelineProgressPanelV3
-          agents={pipelineAgents}
-          percent={pipelinePercent}
-          currentMessage={pipelineMessage}
-          isComplete={pipelineComplete}
-          hasError={pipelineError}
-        />
-        {(pipelineComplete || pipelineError) && generatedDocId && (
-          <button
-            type="button"
-            onClick={() => navigate(buildWorkspaceDocumentDetailPath(generatedDocId, { preserveSearch: location.search }))}
-            className="w-full flex items-center justify-center gap-2 bg-teal-600 text-white py-3.5 rounded-xl hover:bg-teal-700 font-semibold text-sm transition-colors shadow-sm"
-          >
-            {pipelineComplete ? 'Ver Documento Gerado' : 'Ver Documento'}
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        )}
-      </AgentTrailProgressModalV3>
+      {/* Inline v4 progress overlay — simpler than v3 because the pipeline is linear. */}
+      {generating && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Geração v4 em andamento</h2>
+                <p className="text-sm text-slate-600 mt-1">{currentType?.name || selectedType}</p>
+              </div>
+              {(pipelineComplete || pipelineError) && (
+                <button
+                  type="button"
+                  onClick={() => setGenerating(false)}
+                  className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded"
+                  aria-label="Fechar"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <div className="flex items-center justify-between text-xs text-slate-600 mb-1">
+                  <span>{pipelineMessage || 'Inicializando…'}</span>
+                  <span className="tabular-nums">{Math.round(pipelinePercent)}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                  <div
+                    className={`h-full transition-all ${pipelineError ? 'bg-rose-500' : pipelineComplete ? 'bg-emerald-500' : 'bg-teal-500'}`}
+                    style={{ width: `${pipelinePercent}%` }}
+                  />
+                </div>
+              </div>
+              {pipelineIteration != null && (
+                <div className="text-sm text-slate-600">
+                  Iteração: <strong>{pipelineIteration}</strong>
+                  {pipelineTool && <> · Ferramenta atual: <code className="font-mono text-xs">{pipelineTool}</code></>}
+                </div>
+              )}
+              <ul className="space-y-1.5">
+                {pipelineSteps.map(step => (
+                  <li key={step.key} className="flex items-center gap-2 text-sm">
+                    <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${
+                      step.status === 'completed' ? 'bg-emerald-500'
+                      : step.status === 'active' ? 'bg-teal-500 animate-pulse'
+                      : step.status === 'error' ? 'bg-rose-500'
+                      : 'bg-slate-300'
+                    }`} />
+                    <span className={step.status === 'pending' ? 'text-slate-400' : 'text-slate-700'}>
+                      {step.label}
+                    </span>
+                    {step.runtimeMessage && step.status === 'active' && (
+                      <span className="text-xs text-slate-500 truncate">— {step.runtimeMessage}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+              {!pipelineComplete && !pipelineError && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (abortControllerRef.current) {
+                      abortControllerRef.current.abort()
+                      abortControllerRef.current = null
+                      setPipelineError(true)
+                      setPipelineMessage('Geração cancelada pelo usuário.')
+                      setPipelineSteps(prev => prev.map(s =>
+                        s.status === 'active' ? { ...s, status: 'error' as const, completedAt: Date.now() } : s,
+                      ))
+                      toast.info('Geração cancelada', 'A pipeline v4 foi interrompida.')
+                    }
+                  }}
+                  className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+              )}
+              {(pipelineComplete || pipelineError) && generatedDocId && (
+                <button
+                  type="button"
+                  onClick={() => navigate(buildWorkspaceDocumentDetailPath(generatedDocId, { preserveSearch: location.search }))}
+                  className="inline-flex items-center gap-2 bg-teal-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-teal-700"
+                >
+                  {pipelineComplete ? 'Ver documento gerado' : 'Ver documento'}
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
