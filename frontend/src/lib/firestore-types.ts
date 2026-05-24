@@ -123,6 +123,17 @@ export interface UserSettingsData {
   presentation_pipeline_models?: Record<string, string>
   presentation_v2_pipeline_models?: Record<string, string>
   document_v3_models?: Record<string, string>
+  document_v4_models?: Record<string, string>
+  /**
+   * Per-user tool catalog for the Document v4 single-agent + tools pipeline.
+   * Keyed by tool name; missing tools fall back to the catalog default.
+   * `schema_version` is read by the loader so future migrations can grow the
+   * shape without breaking existing user docs.
+   */
+  document_v4_tools?: {
+    schema_version: number
+    tools: Record<string, { enabled: boolean; params?: Record<string, unknown> }>
+  }
   chat_orchestrator_models?: Record<string, string>
   /** Default effort level used by the Chat orchestrator when the user opens a new conversation. */
   chat_effort_default?: ChatEffortLevel

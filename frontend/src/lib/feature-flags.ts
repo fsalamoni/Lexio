@@ -184,6 +184,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_CHAT_LEAN_ORCHESTRATION',
     devToggleable: true,
   },
+  {
+    key: 'FF_DOCUMENT_GENERATION_V4',
+    label: 'Documento v4 (agente único + ferramentas)',
+    description: 'Habilita o novo pipeline de documentos com um único agente que usa ferramentas em loop, em paralelo ao v3',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_DOCUMENT_GENERATION_V4',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────

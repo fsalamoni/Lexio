@@ -3,7 +3,7 @@ import { DOCTYPE_LABELS } from './constants'
 import { PROVIDERS, providerIdFromLabel } from './providers'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 
-export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator' | 'chat_attachment_ingestion' | 'chat_artifact_generation' | 'chat_export_materialization' | 'chat_multimodal_analysis'
+export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'document_generation_v4' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator' | 'chat_attachment_ingestion' | 'chat_artifact_generation' | 'chat_export_materialization' | 'chat_multimodal_analysis'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -107,6 +107,7 @@ export const DEFAULT_BRL_PER_USD = 5.7
 const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   document_generation: 'Geração de documentos',
   document_generation_v3: 'Novo Documento',
+  document_generation_v4: 'Novo Documento (v4)',
   thesis_analysis: 'Análise de teses',
   context_detail: 'Detalhamento de contexto',
   acervo_classificador: 'Classificador de acervo',
@@ -152,6 +153,21 @@ const PHASE_LABELS: Record<string, string> = {
   v3_citation_verifier: 'V3: Verificador de Citações',
   v3_writer: 'V3: Redator',
   v3_writer_reviser: 'V3: Revisor de Redação',
+  // ── Document v4 phases (single-agent + tools) ──
+  // LLM-firing tools (verify_citations LLM mode, search_jurisprudence rerank) are
+  // intentionally recorded under document_generation_v4 so the cost dashboard
+  // captures the full cost of generating a v4 document in its own section —
+  // mirrors the v3 convention of attributing v3_jurisprudence_researcher's
+  // sub-calls to document_generation_v3.
+  v4_agent_loop: 'V4: Loop do Agente',
+  v4_agent: 'V4: Agente Principal',
+  v4_critic: 'V4: Crítico',
+  v4_tool_search_acervo: 'V4: Ferramenta · Acervo',
+  v4_tool_search_thesis_bank: 'V4: Ferramenta · Banco de Teses',
+  v4_tool_search_jurisprudence: 'V4: Ferramenta · Jurisprudência',
+  v4_tool_search_web: 'V4: Ferramenta · Web',
+  v4_tool_deep_research_web: 'V4: Ferramenta · Pesquisa Profunda',
+  v4_tool_verify_citations: 'V4: Ferramenta · Verificação de Citações',
   thesis_pipeline_orchestrator: 'Teses: Orquestrador do Pipeline',
   context_detail: 'Detalhamento de Contexto',
   context_detail_orchestrator: 'Detalhamento: Orquestrador',

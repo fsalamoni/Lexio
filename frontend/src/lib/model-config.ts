@@ -20,6 +20,7 @@ import {
   CONTEXT_DETAIL_AGENT_DEFS,
   DEFAULT_VIDEO_TTS_VOICE,
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
+  DOCUMENT_V4_PIPELINE_AGENT_DEFS,
   NOTEBOOK_ACERVO_AGENT_DEFS,
   PIPELINE_AGENT_DEFS,
   PRESENTATION_PIPELINE_AGENT_DEFS,
@@ -37,6 +38,7 @@ export {
   CONTEXT_DETAIL_AGENT_DEFS,
   DEFAULT_VIDEO_TTS_VOICE,
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
+  DOCUMENT_V4_PIPELINE_AGENT_DEFS,
   NOTEBOOK_ACERVO_AGENT_DEFS,
   PIPELINE_AGENT_DEFS,
   PRESENTATION_PIPELINE_AGENT_DEFS,
@@ -775,6 +777,7 @@ type ScopedModelSettingsKey =
   | 'presentation_pipeline_models'
   | 'presentation_v2_pipeline_models'
   | 'document_v3_models'
+  | 'document_v4_models'
   | 'chat_orchestrator_models'
 
 function resolveScopedUid(uid?: string): string | undefined {
@@ -1273,6 +1276,34 @@ export async function resetDocumentV3Models(uid?: string): Promise<void> {
 }
 
 
+/** Map from document v4 agent key → model ID */
+export type DocumentV4PipelineModelMap = Record<string, string>
+
+/** Default model map for the v4 document pipeline (single-agent + tools). */
+export function getDefaultDocumentV4ModelMap(): DocumentV4PipelineModelMap {
+  const map: DocumentV4PipelineModelMap = {}
+  for (const def of DOCUMENT_V4_PIPELINE_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/** Load v4 pipeline model configuration. */
+export async function loadDocumentV4Models(uid?: string): Promise<DocumentV4PipelineModelMap> {
+  return loadScopedModelMap('document_v4_models', DOCUMENT_V4_PIPELINE_AGENT_DEFS, getDefaultDocumentV4ModelMap(), uid)
+}
+
+/** Save v4 pipeline model configuration to Firestore. */
+export async function saveDocumentV4Models(models: DocumentV4PipelineModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('document_v4_models', DOCUMENT_V4_PIPELINE_AGENT_DEFS, getDefaultDocumentV4ModelMap(), models, uid)
+}
+
+/** Reset v4 pipeline model configuration to defaults. */
+export async function resetDocumentV4Models(uid?: string): Promise<void> {
+  await resetScopedModelMap('document_v4_models', uid)
+}
+
+
 /** Map from chat-orchestrator agent key → model ID */
 export type ChatOrchestratorModelMap = Record<string, string>
 
@@ -1319,6 +1350,7 @@ export const AGENT_CONFIG_DEFS: Record<ScopedModelSettingsKey, AgentModelDef[]> 
   presentation_pipeline_models: PRESENTATION_PIPELINE_AGENT_DEFS,
   presentation_v2_pipeline_models: PRESENTATION_V2_PIPELINE_AGENT_DEFS,
   document_v3_models: DOCUMENT_V3_PIPELINE_AGENT_DEFS,
+  document_v4_models: DOCUMENT_V4_PIPELINE_AGENT_DEFS,
   chat_orchestrator_models: CHAT_ORCHESTRATOR_AGENT_DEFS,
 }
 

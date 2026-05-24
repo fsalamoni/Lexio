@@ -46,6 +46,54 @@ describe('cost analytics coverage', () => {
     ]))
   })
 
+  it('surfaces the v4 single-agent pipeline as its own function with v4 phase labels', () => {
+    const executions = [
+      createUsageExecutionRecord({
+        source_type: 'document_generation_v4',
+        source_id: 'doc-v4-1',
+        phase: 'v4_agent_loop',
+        agent_name: 'V4: Loop do Agente',
+        model: 'anthropic/claude-opus-4',
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: 0,
+        execution_state: 'completed',
+      }),
+      createUsageExecutionRecord({
+        source_type: 'document_generation_v4',
+        source_id: 'doc-v4-1',
+        phase: 'v4_agent',
+        agent_name: 'V4: Agente Principal',
+        model: 'anthropic/claude-opus-4',
+        cost_usd: 0.12,
+      }),
+      createUsageExecutionRecord({
+        source_type: 'document_generation_v4',
+        source_id: 'doc-v4-1',
+        phase: 'v4_critic',
+        agent_name: 'V4: Crítico',
+        model: 'anthropic/claude-sonnet-4',
+        cost_usd: 0.02,
+      }),
+      createUsageExecutionRecord({
+        source_type: 'document_generation_v4',
+        source_id: 'doc-v4-1',
+        phase: 'v4_tool_search_jurisprudence',
+        agent_name: 'V4: search_jurisprudence (LLM rerank)',
+        model: 'anthropic/claude-opus-4',
+        cost_usd: 0.005,
+      }),
+    ]
+
+    const breakdown = buildCostBreakdown(executions)
+
+    expect(breakdown.by_function.find(item => item.key === 'document_generation_v4')?.label).toBe('Novo Documento (v4)')
+    expect(breakdown.by_phase.find(item => item.key === 'v4_agent_loop')?.label).toBe('V4: Loop do Agente')
+    expect(breakdown.by_phase.find(item => item.key === 'v4_agent')?.label).toBe('V4: Agente Principal')
+    expect(breakdown.by_phase.find(item => item.key === 'v4_critic')?.label).toBe('V4: Crítico')
+    expect(breakdown.by_phase.find(item => item.key === 'v4_tool_search_jurisprudence')?.label).toBe('V4: Ferramenta · Jurisprudência')
+  })
+
   it('surfaces the v3 pipeline orchestrator as zero-cost operational usage', () => {
     const executions = [
       createUsageExecutionRecord({
