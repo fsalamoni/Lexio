@@ -880,6 +880,7 @@ describe('saveNotebookDocumentToDocuments', () => {
           openrouter_api_key: 'sk-flat',
           api_keys: { datajud_api_key: 'datajud-platform' },
           agent_models: { triagem: 'openai/gpt-4o-mini' },
+          document_v4_models: { v4_agent: 'anthropic/claude-opus-4' },
         }),
       })
       .mockResolvedValueOnce({
@@ -909,6 +910,7 @@ describe('saveNotebookDocumentToDocuments', () => {
         legacy_migrated_at: expect.any(String),
         api_keys: { datajud_api_key: 'datajud-platform', openrouter_api_key: 'sk-flat' },
         agent_models: { triagem: 'openai/gpt-4o-mini' },
+        document_v4_models: { v4_agent: 'anthropic/claude-opus-4' },
         document_types: [{ id: 'parecer', name: 'Parecer', description: '', templates: ['generic'], is_enabled: true }],
         classification_tipos: { civil: { contratos: ['locacao'] } },
         updated_at: '__server_timestamp__',

@@ -36,6 +36,7 @@ const AGENT_CONFIG_KEYS = [
   'presentation_pipeline_models',
   'presentation_v2_pipeline_models',
   'document_v3_models',
+  'document_v4_models',
   'chat_orchestrator_models',
 ] as const
 
