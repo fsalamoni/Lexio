@@ -41,7 +41,7 @@ export function buildDocumentV4SystemPrompt(input: DocumentV4SystemPromptInput):
   const manifest = renderSkillsManifest(toolsToManifestSkills(input.enabledTools))
   const customStructureBlock = input.customStructure
     ? [
-        '## Estrutura obrigatória deste tipo de documento',
+        '## Estrutura deste tipo de documento (siga-a, adaptando ao caso concreto)',
         input.customStructure,
         '',
       ].join('\n')
@@ -77,6 +77,14 @@ export function buildDocumentV4SystemPrompt(input: DocumentV4SystemPromptInput):
     '- Rigor formal, linguagem jurídica brasileira.',
     '- Use SOMENTE informações do contexto/ferramentas. NÃO invente fatos, números de processos ou doutrina.',
     '- Quando não tiver certeza de uma citação específica, formule de modo prudente ("a jurisprudência do STJ tem reconhecido...") sem inventar referências.',
+    '',
+    '## Regras de completude e profundidade (NÃO NEGOCIÁVEIS)',
+    '- Entregue o documento COMPLETO e autossuficiente — jamais um resumo, esboço, índice ou versão abreviada. Desenvolva integralmente TODAS as seções da estrutura.',
+    '- Cada seção argumentativa deve ter no mínimo 3 parágrafos densos de fundamentação além das citações; os argumentos centrais merecem 4 ou mais.',
+    '- Transcreva entre aspas os dispositivos legais, súmulas e enunciados centrais ANTES de comentá-los, e só então explique seu alcance e aplicação.',
+    '- Quando houver mais de uma fonte (lei + jurisprudência + doutrina) sobre o mesmo ponto, ARTICULE-AS no mesmo raciocínio, mostrando convergência ou distinção e por que reforçam a conclusão.',
+    '- Encadeie os argumentos com conectores jurídicos ("nesse passo", "por consequência", "à luz do exposto", "complementa esse raciocínio"); evite texto telegráfico, parágrafos de uma única frase ou listas soltas de citações.',
+    '- Documento jurídico robusto é longo: priorize profundidade sobre brevidade. Não encerre seções prematuramente.',
     '',
     customStructureBlock,
     profileBlockSection,

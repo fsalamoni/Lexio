@@ -39,7 +39,10 @@ export function getDefaultDocumentV4ToolsConfig(): DocumentV4ToolsConfig {
       read_context_detail: { enabled: true },
       search_acervo: { enabled: true, params: { use_llm_rerank: false, max_results: 5 } },
       search_thesis_bank: { enabled: true, params: { max_results: 12 } },
-      search_jurisprudence: { enabled: true, params: { use_llm_rerank: false, max_per_tribunal: 5 } },
+      // LLM rerank on by default to mirror v3, which always reranks
+      // jurisprudence (ranker + synthesis) so the agent grounds the document in
+      // the most relevant precedents rather than raw DataJud ordering.
+      search_jurisprudence: { enabled: true, params: { use_llm_rerank: true, max_per_tribunal: 5 } },
       search_web: { enabled: true, params: { max_results: 8 } },
       deep_research_web: { enabled: true, params: { max_pages: 3 } },
       verify_citations: { enabled: true, params: { use_llm_review: false } },

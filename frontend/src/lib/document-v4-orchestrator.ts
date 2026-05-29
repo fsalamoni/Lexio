@@ -24,6 +24,7 @@ import {
   type UserProfileForGeneration,
 } from './generation-service'
 import { writeUserScoped, loadAdminDocumentTypes } from './firestore-service'
+import { DEFAULT_DOC_STRUCTURES } from './document-structures'
 import {
   buildUsageSummary,
   createUsageExecutionRecord,
@@ -62,11 +63,32 @@ import {
 /** Hard cap on the number of (LLM call + tool exec) iterations. */
 export const DOCUMENT_V4_MAX_ITERATIONS = 20
 
-/** Soft cost ceiling (USD). When exceeded the orchestrator forces submit_final_answer. */
-export const DOCUMENT_V4_SOFT_COST_CAP_USD = 1.5
+/**
+ * Soft cost ceiling (USD). When exceeded the orchestrator forces
+ * submit_final_answer. Sized to give the single agent the same room a full v3
+ * premium run gets (research + several drafting turns + one revision) so that
+ * the document is not truncated prematurely just to stay under budget.
+ */
+export const DOCUMENT_V4_SOFT_COST_CAP_USD = 4.0
 
 /** Critic score threshold below which one revision iteration is forced. */
 export const DOCUMENT_V4_CRITIC_THRESHOLD = 75
+
+/**
+ * Output-token budget for the single agent's turns. Matches the v3 Redator
+ * (9000) so that drafting a section — and especially emitting the final
+ * document via submit_final_answer — is not capped to a short summary.
+ * Tool-decision turns naturally stop far below this cap, so a single generous
+ * budget is safe across both the planning and the writing turns.
+ */
+export const DOCUMENT_V4_AGENT_MAX_TOKENS = 9000
+
+/**
+ * Sampling temperature for the agent turns. Matches the v3 Redator (0.3) for
+ * natural legal prose; the JSON tool contract is recovered by the parser's
+ * single retry when an occasional turn drifts from strict JSON.
+ */
+export const DOCUMENT_V4_AGENT_TEMPERATURE = 0.3
 
 export type GenerationProgressV4 = DocumentV4PipelineProgress
 export type ProgressCallbackV4 = (p: GenerationProgressV4) => void
@@ -202,7 +224,11 @@ export async function generateDocumentV4(
     ])
 
     const adminDocType = adminDocTypes.find(dt => dt.id === docType)
-    const customStructure = adminDocType?.structure?.trim() || undefined
+    // Mirror v3: ground the single agent in a concrete structure. Prefer the
+    // admin's custom structure; otherwise fall back to the canonical template
+    // for the document type so every document gets the same scaffolding the v3
+    // outline planner + document-type templates provide to the v3 Redator.
+    const customStructure = adminDocType?.structure?.trim() || DEFAULT_DOC_STRUCTURES[docType] || undefined
 
     const docTypeLabel = DOC_TYPE_NAMES[docType] ?? docType
     const areaLabels = areas.map(a => AREA_NAMES[a] ?? a)
@@ -301,8 +327,8 @@ export async function generateDocumentV4(
               messages,
               primaryModel,
               fallbackChain,
-              2400,
-              0.2,
+              DOCUMENT_V4_AGENT_MAX_TOKENS,
+              DOCUMENT_V4_AGENT_TEMPERATURE,
               { signal },
             )
       } catch (err) {
@@ -426,8 +452,8 @@ export async function generateDocumentV4(
                   messages,
                   primaryModel,
                   fallbackChain,
-                  2400,
-                  0.2,
+                  DOCUMENT_V4_AGENT_MAX_TOKENS,
+                  DOCUMENT_V4_AGENT_TEMPERATURE,
                   { signal },
                 )
             recordExecution('v4_agent', 'V4: Agente Principal (revisão pós-crítico)', revisionResult)
