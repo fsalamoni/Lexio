@@ -72,7 +72,7 @@ export function buildChatV2Skills(enabled: ReadonlySet<string>): Skill[] {
 const CHAT_V2_CALLABLE_AGENT_KEYS: ReadonlySet<string> = new Set(['cv2_worker'])
 
 function listChatV2CallableAgents(): Array<{ key: string; label: string; description: string }> {
-  return CHAT_ORCHESTRATOR_V2_AGENT_DEFS
+  return (CHAT_ORCHESTRATOR_V2_AGENT_DEFS ?? [])
     .filter(def => CHAT_V2_CALLABLE_AGENT_KEYS.has(def.key))
     .map(def => ({ key: def.key, label: def.label, description: def.description }))
 }

@@ -2,10 +2,14 @@ import { callLLMWithMessages, callLLMWithMessagesFallback, type LLMResult } from
 import { CHAT_ORCHESTRATOR_AGENT_DEFS, CHAT_ORCHESTRATOR_V2_AGENT_DEFS } from '../model-config'
 import type { UsageExecutionRecord, UsageFunctionKey } from '../cost-analytics'
 
-/** v1 + v2 agent definitions, so label/category lookups resolve cv2_* agents too. */
-const ALL_CHAT_AGENT_DEFS = [...CHAT_ORCHESTRATOR_AGENT_DEFS, ...CHAT_ORCHESTRATOR_V2_AGENT_DEFS]
+/**
+ * Resolve an agent definition across v1 + v2 rosters. Looked up lazily (not a
+ * module-level array) so it stays correct under the test runner's shared module
+ * registry (`isolate: false`), where imported defs may be (re)bound per file.
+ */
 function findChatAgentDef(agentKey: string) {
-  return ALL_CHAT_AGENT_DEFS.find(a => a.key === agentKey)
+  return (CHAT_ORCHESTRATOR_AGENT_DEFS ?? []).find(a => a.key === agentKey)
+    ?? (CHAT_ORCHESTRATOR_V2_AGENT_DEFS ?? []).find(a => a.key === agentKey)
 }
 import type { SkillContext } from './types'
 import { CHAT_AGENT_PACKAGE_PROMPT } from './agent-output'
