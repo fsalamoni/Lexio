@@ -71,9 +71,10 @@ const callAgentSkill: Skill<{ agent_key?: string; task?: string }> = {
   async run(args, ctx) {
     const agentKey = String(args.agent_key ?? '')
     const task = String(args.task ?? '')
-    if (!CALLABLE_AGENT_KEYS.has(agentKey)) {
+    const callable = ctx.profile?.callableAgentKeys ?? CALLABLE_AGENT_KEYS
+    if (!callable.has(agentKey)) {
       return {
-        tool_message: `Agente "${agentKey}" indisponível. Use um destes: ${[...CALLABLE_AGENT_KEYS].join(', ')}.`,
+        tool_message: `Agente "${agentKey}" indisponível. Use um destes: ${[...callable].join(', ')}.`,
       }
     }
     if (!task.trim()) {
@@ -136,7 +137,8 @@ const callAgentsParallelSkill: Skill<{ calls?: ParallelAgentCall[]; shared_conte
   },
   async run(args, ctx) {
     const fanOut = EFFORT_PRESETS[ctx.effort]?.maxFanOut ?? 2
-    const normalized = normalizeParallelAgentCalls(args.calls, fanOut, String(args.shared_context ?? ''))
+    const callable = ctx.profile?.callableAgentKeys ?? CALLABLE_AGENT_KEYS
+    const normalized = normalizeParallelAgentCalls(args.calls, fanOut, String(args.shared_context ?? ''), callable)
     if (!normalized.accepted.length) {
       return {
         tool_message: normalized.messages.length
@@ -177,7 +179,7 @@ const callAgentsParallelSkill: Skill<{ calls?: ParallelAgentCall[]; shared_conte
   },
 }
 
-function normalizeParallelAgentCalls(calls: unknown, fanOut: number, sharedContext: string): { accepted: Array<{ agentKey: string; task: string }>; messages: string[] } {
+function normalizeParallelAgentCalls(calls: unknown, fanOut: number, sharedContext: string, callableKeys: ReadonlySet<string> = CALLABLE_AGENT_KEYS): { accepted: Array<{ agentKey: string; task: string }>; messages: string[] } {
   const items = Array.isArray(calls) ? calls : []
   const accepted: Array<{ agentKey: string; task: string }> = []
   const messages: string[] = []
@@ -196,7 +198,7 @@ function normalizeParallelAgentCalls(calls: unknown, fanOut: number, sharedConte
     const record = item as Record<string, unknown>
     const agentKey = String(record.agent_key ?? '').trim()
     const task = clipOversizedParallelText(String(record.task ?? '').trim(), 8_000, `Tarefa de ${agentKey || 'agente vazio'}`, messages)
-    if (!CALLABLE_AGENT_KEYS.has(agentKey)) {
+    if (!callableKeys.has(agentKey)) {
       messages.push(`Agente "${agentKey || 'vazio'}" indisponível no lote.`)
       continue
     }

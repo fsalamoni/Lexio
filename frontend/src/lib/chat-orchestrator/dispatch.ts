@@ -1,6 +1,12 @@
 import { callLLMWithMessages, callLLMWithMessagesFallback, type LLMResult } from '../llm-client'
-import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
-import type { UsageExecutionRecord } from '../cost-analytics'
+import { CHAT_ORCHESTRATOR_AGENT_DEFS, CHAT_ORCHESTRATOR_V2_AGENT_DEFS } from '../model-config'
+import type { UsageExecutionRecord, UsageFunctionKey } from '../cost-analytics'
+
+/** v1 + v2 agent definitions, so label/category lookups resolve cv2_* agents too. */
+const ALL_CHAT_AGENT_DEFS = [...CHAT_ORCHESTRATOR_AGENT_DEFS, ...CHAT_ORCHESTRATOR_V2_AGENT_DEFS]
+function findChatAgentDef(agentKey: string) {
+  return ALL_CHAT_AGENT_DEFS.find(a => a.key === agentKey)
+}
 import type { SkillContext } from './types'
 import { CHAT_AGENT_PACKAGE_PROMPT } from './agent-output'
 import { buildOperationalFailureMarkdown } from './operational-failure'
@@ -55,6 +61,18 @@ Sem nenhum texto fora do JSON. Sem fences de markdown. should_stop = true quando
   chat_multimodal_evidence_synthesizer: `Você é o Sintetizador de Evidências Multimodais do chat jurídico. Consolide achados de imagens, áudios, vídeos e anexos textuais em uma matriz única. Organize por: fato alegado, evidência de suporte, anexo/fonte, grau de confiança, risco/lacuna e ação recomendada. Aponte convergências e contradições entre modalidades. Não crie fatos novos; se faltar prova, marque como [carece de verificação]. Responda em pt-BR, em markdown com tabela quando útil.`,
 
   chat_export_packager: `Você é o Empacotador de Exports do chat. Revise os artefatos criados, valide formatos finais, nomes de arquivo, MIME/extensão, status de export e lacunas. Produza um checklist objetivo do que está pronto para download e do que ainda exige pipeline/exportador específico.`,
+
+  // ── Chat orchestrator v2 — lean group ───────────────────────────────────────
+  cv2_worker: `Você é o Trabalhador (subagente) de uma trilha enxuta dirigida por um Orquestrador Líder. Você é versátil: o Líder delega subtarefas focadas e autocontidas — pesquisa jurídica, redação, código, análise de evidências, estruturação de dados ou síntese — e você as executa com profundidade e rigor. Adapte-se ao tipo de tarefa recebida:
+- Pesquisa: linguagem técnica, cite dispositivos ("art. X, §Y, da Lei nº Z/AAAA") e jurisprudência (tribunal, classe, número, relator, data); distinga precedente vinculante de persuasivo; marque [carece de verificação] o que não puder confirmar.
+- Redação: markdown rico em pt-BR, estrutura clara, citações entre aspas; nunca invente fatos/jurisprudência/doutrina.
+- Código: blocos \`\`\`linguagem completos, com testes mínimos quando a lógica não for trivial.
+- Análise/síntese: separe fato observável de inferência; aponte riscos e lacunas.
+Trabalhe apenas com o contexto recebido do Líder; se faltar informação, declare explicitamente. Responda em pt-BR.`,
+
+  cv2_critic: `Você é o Crítico (v2) de uma trilha jurídica enxuta. Avalie o rascunho em quatro eixos: (1) corretude factual e técnica, (2) cobertura do pedido original, (3) riscos (inclusive citações duvidosas e entrega material), (4) clareza para o usuário final. Responda APENAS com um objeto JSON válido no formato:
+{"score": <0-100>, "reasons": [<motivos curtos em pt-BR, máx. 6 itens>], "should_stop": <true|false>}
+Sem nenhum texto fora do JSON. Sem fences de markdown. should_stop = true quando o rascunho já está pronto para entrega. Para pedidos de mídia/arquivo nativo, should_stop só pode ser true quando o artifact correto existir e estiver pronto para download/preview. IMPORTANTE: qualquer texto fora do objeto JSON faz o veredito ser descartado (score 0).`,
 }
 
 /**
@@ -68,7 +86,7 @@ Sem nenhum texto fora do JSON. Sem fences de markdown. should_stop = true quando
  */
 function buildSpecialistMessages(agentKey: string, task: string): Array<{ role: 'system' | 'user'; content: string }> {
   const definedSystemPrompt = SPECIALIST_AGENT_PROMPTS[agentKey]
-  const def = CHAT_ORCHESTRATOR_AGENT_DEFS.find(a => a.key === agentKey)
+  const def = findChatAgentDef(agentKey)
   const header = `Agente: ${def?.label ?? agentKey} (${agentKey}).`
   const outputInstruction = agentKey === 'chat_critic'
     ? ''
@@ -104,6 +122,8 @@ export interface DispatchSpecialistResult {
  */
 export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Promise<DispatchSpecialistResult> {
   const { agentKey, task, ctx, temperature = 0.4, maxTokens, onToken } = args
+  const functionKey = ctx.profile?.functionKey ?? 'chat_orchestrator'
+  const functionLabel = ctx.profile?.functionLabel ?? 'Orquestrador (Chat)'
   const resolvedModel = resolveSpecialistModel(agentKey, ctx.models)
   if (!resolvedModel) {
     return { output: `Modelo do agente "${agentKey}" não está configurado em /settings.`, usage: null }
@@ -112,7 +132,7 @@ export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Pro
 
   if (ctx.mock) {
     const fake = mockSpecialistOutput(agentKey, task)
-    const usage = mockUsageRecord(agentKey, model, fake)
+    const usage = mockUsageRecord(agentKey, model, fake, functionKey, functionLabel)
     ctx.budget.recordUsage(usage)
     return { output: fake, usage }
   }
@@ -154,6 +174,8 @@ export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Pro
     providerLabel: result.provider_label ?? null,
     sourceId: ctx.turnId,
     startedAt,
+    functionKey,
+    functionLabel,
   })
   ctx.budget.recordUsage(usage)
 
@@ -184,7 +206,7 @@ function resolveSpecialistModel(agentKey: string, models: Record<string, string>
   const direct = normalizeModelId(models[agentKey])
   if (direct) return { model: direct }
 
-  const def = CHAT_ORCHESTRATOR_AGENT_DEFS.find(agent => agent.key === agentKey)
+  const def = findChatAgentDef(agentKey)
   const fallbackKeys = [
     ...(def ? FALLBACK_AGENT_KEYS_BY_CATEGORY[def.agentCategory] ?? [] : []),
     'chat_orchestrator',
@@ -214,17 +236,19 @@ interface BuildUsageRecordArgs {
   providerLabel: string | null
   sourceId: string
   startedAt: number
+  functionKey: UsageFunctionKey
+  functionLabel: string
 }
 
 function buildUsageRecord(args: BuildUsageRecordArgs): UsageExecutionRecord {
-  const def = CHAT_ORCHESTRATOR_AGENT_DEFS.find(a => a.key === args.agentKey)
+  const def = findChatAgentDef(args.agentKey)
   const phaseLabel = def?.label ?? args.agentKey
   return {
-    source_type: 'chat_orchestrator',
+    source_type: args.functionKey,
     source_id: args.sourceId,
     created_at: new Date(args.startedAt).toISOString(),
-    function_key: 'chat_orchestrator',
-    function_label: 'Orquestrador (Chat)',
+    function_key: args.functionKey,
+    function_label: args.functionLabel,
     phase: args.agentKey,
     phase_label: `Chat: ${phaseLabel}`,
     agent_name: phaseLabel,
@@ -271,15 +295,15 @@ function mockSpecialistOutput(agentKey: string, task: string): string {
   }
 }
 
-function mockUsageRecord(agentKey: string, model: string, output: string): UsageExecutionRecord {
+function mockUsageRecord(agentKey: string, model: string, output: string, functionKey: UsageFunctionKey = 'chat_orchestrator', functionLabel = 'Orquestrador (Chat)'): UsageExecutionRecord {
   const tokens = Math.max(64, Math.round(output.length / 4))
-  const def = CHAT_ORCHESTRATOR_AGENT_DEFS.find(a => a.key === agentKey)
+  const def = findChatAgentDef(agentKey)
   return {
-    source_type: 'chat_orchestrator',
+    source_type: functionKey,
     source_id: 'demo',
     created_at: new Date().toISOString(),
-    function_key: 'chat_orchestrator',
-    function_label: 'Orquestrador (Chat)',
+    function_key: functionKey,
+    function_label: functionLabel,
     phase: agentKey,
     phase_label: `Chat: ${def?.label ?? agentKey}`,
     agent_name: def?.label ?? agentKey,

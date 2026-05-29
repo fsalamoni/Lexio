@@ -16,10 +16,39 @@ import type {
   ChatTurnAttachment,
   ChatTurnStatus,
 } from '../firestore-types'
-import type { UsageExecutionRecord } from '../cost-analytics'
+import type { UsageExecutionRecord, UsageFunctionKey } from '../cost-analytics'
 
 /** Re-export for consumers so they only need a single import path. */
 export type { ChatEffortLevel, ChatTrailEvent, ChatTurnStatus }
+
+/**
+ * Orchestration profile — lets a single engine power multiple chat pipelines
+ * (v1 full-roster vs v2 lean group) without forking the runtime. The default
+ * profile preserves the original v1 behavior; the v2 runtime supplies its own
+ * via `RunChatTurnInput.profile`.
+ */
+export interface ChatOrchestratorProfile {
+  /** Identifier used in trail/debug. */
+  id: 'v1' | 'v2'
+  /** Model key (in `models`) used for the lead orchestrator LLM. */
+  orchestratorAgentKey: string
+  /** Human label for the lead, used in cost/trail. */
+  orchestratorLabel: string
+  /** Model key used by the forced-finalization writer. */
+  finalForceAgentKey: string
+  /** Model key used by the critic / quality gate. */
+  criticAgentKey: string
+  /** Cost source_type / function_key all usage records are tagged with. */
+  functionKey: UsageFunctionKey
+  /** Cost function label. */
+  functionLabel: string
+  /** Agent keys the orchestrator may invoke through `call_agent`. */
+  callableAgentKeys: ReadonlySet<string>
+  /** Descriptions of callable agents rendered into the system prompt. */
+  listCallableAgents: () => Array<{ key: string; label: string; description: string }>
+  /** Builds the skill set available this turn (already filtered by user config). */
+  buildSkills: () => Skill[]
+}
 
 /**
  * One message inside the orchestrator's working history. Mirrors the OpenAI
@@ -74,8 +103,13 @@ export interface SkillContext {
   fallbackModels?: Record<string, string[]>
   apiKey: string
   /** Mock runtime active (demo mode / no Firebase). */
-  /** Mock runtime active (demo mode / no Firebase). */
   mock: boolean
+  /**
+   * Active orchestration profile. Optional on the type so existing test
+   * fixtures that build a bare `SkillContext` keep compiling; recording sites
+   * fall back to the v1 defaults when absent.
+   */
+  profile?: ChatOrchestratorProfile
   /** Streaming callback: fires for each token delta produced by any specialist agent. */
   onAgentToken?: (agentKey: string, delta: string, total: string) => void
   /** Optional durable persistence hook; awaited before the runtime advances to the next iteration. */
@@ -175,6 +209,8 @@ export interface RunChatTurnInput {
   persistWorkPackage?: (workPackage: ChatAgentWorkPackage) => Promise<ChatAgentWorkPackage>
   /** Optional approval persistence hook for costly or side-effectful actions. */
   createApprovalRequest?: SkillContext['createApprovalRequest']
+  /** Orchestration profile (defaults to v1 when omitted). Set by `runChatTurnV2`. */
+  profile?: ChatOrchestratorProfile
 }
 
 /**
@@ -193,6 +229,10 @@ export type OrchestratorLLMCall = (params: {
   budget: BudgetTracker
   perCallTokenCap: number
   agentLabel?: string
+  /** Cost source_type / function_key for the usage record (defaults to chat_orchestrator). */
+  functionKey?: UsageFunctionKey
+  /** Cost function label for the usage record. */
+  functionLabel?: string
   /** Streaming callback: invoked token-by-token as the LLM generates the decision. */
   onToken?: (delta: string, total: string) => void
 }) => Promise<{ raw: string; usage: UsageExecutionRecord | null }>

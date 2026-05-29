@@ -11,6 +11,8 @@ import { buildOperationalFailureMarkdown } from './operational-failure'
  */
 export const callOrchestratorLLM: OrchestratorLLMCall = async (params) => {
   const { systemPrompt, history, models, fallbackModels, modelKey, apiKey, signal, perCallTokenCap, agentLabel, onToken } = params
+  const functionKey = params.functionKey ?? 'chat_orchestrator'
+  const functionLabel = params.functionLabel ?? 'Orquestrador (Chat)'
   const model = models[modelKey]
   if (!model) {
     return {
@@ -61,11 +63,11 @@ export const callOrchestratorLLM: OrchestratorLLMCall = async (params) => {
   const def = CHAT_ORCHESTRATOR_AGENT_DEFS.find(a => a.key === modelKey)
   const phaseLabel = agentLabel ?? def?.label ?? modelKey
   const usage: UsageExecutionRecord = {
-    source_type: 'chat_orchestrator',
+    source_type: functionKey,
     source_id: 'turn',
     created_at: new Date(startedAt).toISOString(),
-    function_key: 'chat_orchestrator',
-    function_label: 'Orquestrador (Chat)',
+    function_key: functionKey,
+    function_label: functionLabel,
     phase: modelKey,
     phase_label: `Chat: ${phaseLabel}`,
     agent_name: phaseLabel,

@@ -3,7 +3,7 @@ import { createBudget } from './budget'
 import { dispatchSpecialistAgent } from './dispatch'
 import { callOrchestratorLLM, appendToolMessage } from './orchestrator-llm'
 import { runCritic } from './quality'
-import { buildSkillRegistry, listCallableAgentDescriptions } from './skill-registry'
+import { buildSkillRegistry, listCallableAgentDescriptions, CALLABLE_AGENT_KEYS } from './skill-registry'
 import { OrchestratorDecisionParseError, parseOrchestratorDecision, renderSkillsManifest } from './tools-adapter'
 import { EFFORT_PRESETS } from './effort-presets'
 import { parseAgentOutputPackage, stripAgentPackageArtifacts } from './agent-output'
@@ -20,6 +20,7 @@ import {
   type ChatExpectedDeliverable,
 } from '../chat-deliverable-contract'
 import type {
+  ChatOrchestratorProfile,
   OrchestratorDecision,
   OrchestratorMessage,
   RunChatTurnInput,
@@ -28,8 +29,24 @@ import type {
   SkillContext,
 } from './types'
 
-const ORCHESTRATOR_AGENT_KEY = 'chat_orchestrator'
-const FINAL_FORCE_AGENT_KEY = 'chat_writer'
+/**
+ * Default profile — the original v1 behavior: full specialist roster,
+ * `chat_orchestrator` lead, `chat_writer` finaliser, `chat_critic` gate, and
+ * the complete skill registry. Used whenever `RunChatTurnInput.profile` is
+ * omitted so v1 callers are unaffected by the v2 parameterization.
+ */
+export const DEFAULT_V1_PROFILE: ChatOrchestratorProfile = {
+  id: 'v1',
+  orchestratorAgentKey: 'chat_orchestrator',
+  orchestratorLabel: 'Orquestrador',
+  finalForceAgentKey: 'chat_writer',
+  criticAgentKey: 'chat_critic',
+  functionKey: 'chat_orchestrator',
+  functionLabel: 'Orquestrador (Chat)',
+  callableAgentKeys: CALLABLE_AGENT_KEYS,
+  listCallableAgents: listCallableAgentDescriptions,
+  buildSkills: buildSkillRegistry,
+}
 
 /**
  * Run a single chat turn end-to-end.
@@ -44,12 +61,13 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
   }
 
   const preset = EFFORT_PRESETS[input.effort]
+  const profile = input.profile ?? DEFAULT_V1_PROFILE
   const budget = createBudget(preset.maxTokens)
   // The orchestrator commands the whole turn — under lean orchestration it is
   // never token-capped and never force-summarised: only an explicit hard stop
   // (user cancel) or the iteration ceiling end the loop.
   const leanOrchestration = isEnabled('FF_CHAT_LEAN_ORCHESTRATION')
-  const skills = buildSkillRegistry()
+  const skills = profile.buildSkills()
   const skillsByName = new Map<string, Skill>(skills.map(s => [s.name, s]))
   const llmCall = input.llmCall ?? callOrchestratorLLM
   const allowedTools = skills.map(s => s.name)
@@ -77,9 +95,10 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     persistWorkPackage: input.persistWorkPackage,
     createApprovalRequest: input.createApprovalRequest,
     mock: Boolean(input.mock),
+    profile,
   }
 
-  const systemPrompt = buildOrchestratorSystemPrompt(skills, input.effort, expectedDeliverables)
+  const systemPrompt = buildOrchestratorSystemPrompt(skills, input.effort, expectedDeliverables, profile)
   let history: OrchestratorMessage[] = [
     ...input.history.map(m => ({ role: m.role, content: m.content })),
     { role: 'user', content: renderCurrentTurnUserContent({ userInput: input.user_input, attachments: input.attachments, contextSources: input.contextSources }) },
@@ -729,17 +748,20 @@ async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Pro
     })
   }
 
+  const profile = ctx.profile ?? DEFAULT_V1_PROFILE
   const { raw, usage } = await llmCall({
     systemPrompt,
     history,
-    modelKey: ORCHESTRATOR_AGENT_KEY,
+    modelKey: profile.orchestratorAgentKey,
     models: ctx.models,
     fallbackModels: ctx.fallbackModels,
     apiKey: ctx.apiKey,
     signal: ctx.signal,
     budget: ctx.budget,
     perCallTokenCap,
-    agentLabel: 'Orquestrador',
+    agentLabel: profile.orchestratorLabel,
+    functionKey: profile.functionKey,
+    functionLabel: profile.functionLabel,
     onToken,
   })
   if (usage) {
@@ -811,27 +833,28 @@ async function forceFinalize(history: OrchestratorMessage[], ctx: SkillContext):
     'Produza a resposta final em markdown rico (pt-BR), respeitando o que foi descoberto. Se faltar informação, declare isso explicitamente em vez de inventar.',
   ].join('\n')
 
+  const finalForceAgentKey = ctx.profile?.finalForceAgentKey ?? 'chat_writer'
   const onToken = ctx.onAgentToken
-    ? (delta: string, total: string) => ctx.onAgentToken!(FINAL_FORCE_AGENT_KEY, delta, total)
+    ? (delta: string, total: string) => ctx.onAgentToken!(finalForceAgentKey, delta, total)
     : undefined
   const { output } = await dispatchSpecialistAgent({
-    agentKey: FINAL_FORCE_AGENT_KEY,
+    agentKey: finalForceAgentKey,
     task,
     ctx,
     onToken,
   })
   return parseAgentOutputPackage({
     rawOutput: output,
-    agentKey: FINAL_FORCE_AGENT_KEY,
+    agentKey: finalForceAgentKey,
     task,
     conversationId: ctx.conversationId,
     turnId: ctx.turnId,
   }).displayMarkdown
 }
 
-function buildOrchestratorSystemPrompt(skills: Skill[], effort: string, expectedDeliverables: ChatExpectedDeliverable[]): string {
+function buildOrchestratorSystemPrompt(skills: Skill[], effort: string, expectedDeliverables: ChatExpectedDeliverable[], profile: ChatOrchestratorProfile): string {
   const manifest = renderSkillsManifest(skills)
-  const callable = listCallableAgentDescriptions()
+  const callable = profile.listCallableAgents()
     .map(a => `- \`${a.key}\` (${a.label}): ${a.description}`)
     .join('\n')
   const expectedBlock = expectedDeliverables.length

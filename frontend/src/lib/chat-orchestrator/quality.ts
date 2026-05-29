@@ -19,9 +19,10 @@ export interface CriticOptions {
  * event so the UI can render the score inline.
  */
 export async function runCritic(draft: string, ctx: SkillContext, options: CriticOptions = {}): Promise<CriticVerdict> {
+  const criticAgentKey = ctx.profile?.criticAgentKey ?? 'chat_critic'
   const callEvent: ChatTrailEvent = {
     type: 'agent_call',
-    agent_key: 'chat_critic',
+    agent_key: criticAgentKey,
     task: 'Avaliar rascunho atual (auto)',
     ts: new Date().toISOString(),
   }
@@ -41,9 +42,9 @@ Rascunho:
 ${draft}
 """`
 
-  const onToken = ctx.onAgentToken ? ((delta: string, total: string) => ctx.onAgentToken!('chat_critic', delta, total)) : undefined
+  const onToken = ctx.onAgentToken ? ((delta: string, total: string) => ctx.onAgentToken!(criticAgentKey, delta, total)) : undefined
   const { output, usage } = await dispatchSpecialistAgent({
-    agentKey: 'chat_critic',
+    agentKey: criticAgentKey,
     task: promptTask,
     ctx,
     onToken,
@@ -53,7 +54,7 @@ ${draft}
 
   const responseEvent: ChatTrailEvent = {
     type: 'agent_response',
-    agent_key: 'chat_critic',
+    agent_key: criticAgentKey,
     output: output.length > 600 ? `${output.slice(0, 599)}…` : output,
     ...(usage ? { usage } : {}),
     ts: new Date().toISOString(),

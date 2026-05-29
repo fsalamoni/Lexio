@@ -507,11 +507,11 @@ const generateImageSkill: Skill<GenerateImageArgs> = {
       })
 
       ctx.budget.recordUsage({
-        source_type: 'chat_orchestrator',
+        source_type: ctx.profile?.functionKey ?? 'chat_orchestrator',
         source_id: ctx.turnId,
         created_at: nowIso(),
-        function_key: 'chat_orchestrator',
-        function_label: 'Orquestrador (Chat)',
+        function_key: ctx.profile?.functionKey ?? 'chat_orchestrator',
+        function_label: ctx.profile?.functionLabel ?? 'Orquestrador (Chat)',
         phase: 'generate_image',
         phase_label: 'Chat: generate_image',
         agent_name: 'Gerador de Imagem',
@@ -762,11 +762,11 @@ const generateAudioSkill: Skill<GenerateAudioArgs> = {
       })
 
       ctx.budget.recordUsage({
-        source_type: 'chat_orchestrator',
+        source_type: ctx.profile?.functionKey ?? 'chat_orchestrator',
         source_id: ctx.turnId,
         created_at: nowIso(),
-        function_key: 'chat_orchestrator',
-        function_label: 'Orquestrador (Chat)',
+        function_key: ctx.profile?.functionKey ?? 'chat_orchestrator',
+        function_label: ctx.profile?.functionLabel ?? 'Orquestrador (Chat)',
         phase: 'generate_audio',
         phase_label: 'Chat: generate_audio',
         agent_name: 'Gerador de Áudio Literal',
@@ -1335,11 +1335,11 @@ const generateVideoSkill: Skill<GenerateVideoArgs> = {
       const exportId = `${artifactId}-${format}`
 
       ctx.budget.recordUsage({
-        source_type: 'chat_orchestrator',
+        source_type: ctx.profile?.functionKey ?? 'chat_orchestrator',
         source_id: ctx.turnId,
         created_at: nowIso(),
-        function_key: 'chat_orchestrator',
-        function_label: 'Orquestrador (Chat)',
+        function_key: ctx.profile?.functionKey ?? 'chat_orchestrator',
+        function_label: ctx.profile?.functionLabel ?? 'Orquestrador (Chat)',
         phase: 'generate_video',
         phase_label: 'Chat: generate_video',
         agent_name: 'Gerador de Vídeo Literal',
