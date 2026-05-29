@@ -43,6 +43,7 @@ import DocumentV4PipelineConfigCard from '../components/admin/DocumentV4Pipeline
 import DocumentV4ToolsConfigCard from '../components/admin/DocumentV4ToolsConfigCard'
 import ChatOrchestratorV2ConfigCard from '../components/admin/ChatOrchestratorV2ConfigCard'
 import ChatOrchestratorV2ToolsConfigCard from '../components/admin/ChatOrchestratorV2ToolsConfigCard'
+import SidecarConnectionCard from '../components/admin/SidecarConnectionCard'
 import { isEnabled as isFeatureEnabled } from '../lib/feature-flags'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
 import MultimodalPolicyCard from '../components/admin/MultimodalPolicyCard'
@@ -1082,6 +1083,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <ChatOrchestratorV2ToolsConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Sidecar (PC) connection — local folder for file/shell actions */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_sidecar_connection"
+          title="Pasta local (PC) — ações de arquivos e comandos"
+          icon={Brain}
+          iconColor="text-indigo-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <SidecarConnectionCard />
         </AdminCollapsibleSection>
       )}
 

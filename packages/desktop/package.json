@@ -1,0 +1,20 @@
+{
+  "name": "@lexio/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lexio Desktop Sidecar — local agent that lets the Lexio chat orchestrator read/write files and run commands inside a sandboxed workspace folder on the user's PC.",
+  "type": "module",
+  "bin": {
+    "lexio-desktop": "./bin/lexio-desktop.mjs"
+  },
+  "scripts": {
+    "start": "node ./bin/lexio-desktop.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

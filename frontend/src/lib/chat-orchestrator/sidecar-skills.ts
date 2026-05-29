@@ -17,11 +17,20 @@
 
 import type { ChatTrailEvent } from '../firestore-types'
 import type { Skill, SkillContext, SkillResult } from './types'
+import { DEFAULT_SIDECAR_HOST, DEFAULT_SIDECAR_PORT } from './sidecar-config'
 
 // ── Configuração do Sidecar ───────────────────────────────────────────────────
 
-const SIDECAR_WS_URL = 'ws://localhost:9420'
 const SIDECAR_WS_TIMEOUT_MS = 5000
+
+/** Build the ws URL (+ token) from the per-turn sidecar config on the context. */
+function resolveSidecarWsUrl(ctx: SkillContext): string | null {
+  const cfg = ctx.sidecar
+  if (!cfg || !cfg.enabled || !cfg.token) return null
+  const host = cfg.host || DEFAULT_SIDECAR_HOST
+  const port = cfg.port || DEFAULT_SIDECAR_PORT
+  return `ws://${host}:${port}/?token=${encodeURIComponent(cfg.token)}`
+}
 
 /** Tipos de mensagem trocadas com o sidecar. */
 interface SidecarRequest {
@@ -55,6 +64,7 @@ function uid(): string {
 async function callSidecar(
   request: SidecarRequest,
   signal: AbortSignal,
+  wsUrl: string,
 ): Promise<SidecarResponse | null> {
   // Verificar se estamos em ambiente que suporta WebSocket
   if (typeof WebSocket === 'undefined') return null
@@ -74,7 +84,7 @@ async function callSidecar(
 
     let ws: WebSocket
     try {
-      ws = new WebSocket(SIDECAR_WS_URL)
+      ws = new WebSocket(wsUrl)
     } catch {
       clearTimeout(timeout)
       signal.removeEventListener('abort', abortHandler)
@@ -119,14 +129,15 @@ async function callSidecar(
  * Resolve se devemos usar sidecar real ou mock.
  * Sidecar só está disponível em ambiente desktop com o processo rodando.
  */
-async function isSidecarAvailable(signal: AbortSignal): Promise<boolean> {
+async function isSidecarAvailable(signal: AbortSignal, wsUrl: string | null): Promise<boolean> {
+  if (!wsUrl) return false
   const ping: SidecarRequest = {
     id: uid(),
     type: 'shell',
     op: 'ping',
     payload: {},
   }
-  const response = await callSidecar(ping, signal)
+  const response = await callSidecar(ping, signal, wsUrl)
   return response !== null && response.ok
 }
 
@@ -181,8 +192,9 @@ const readFileSkill: Skill<ReadFileArgs> = {
     }
     const maxLines = Number(args.max_lines ?? 200) || 200
 
-    const sidecarOk = await isSidecarAvailable(ctx.signal)
-    const useSidecar = sidecarOk && !ctx.mock
+    const wsUrl = resolveSidecarWsUrl(ctx)
+    const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
+    const useSidecar = sidecarOk && !ctx.mock && !!wsUrl
 
     let content: string
     let success: boolean
@@ -196,6 +208,7 @@ const readFileSkill: Skill<ReadFileArgs> = {
           payload: { path, max_lines: maxLines },
         },
         ctx.signal,
+        wsUrl!,
       )
       if (!response) {
         return { tool_message: 'Sidecar não respondeu. Verifique se @lexio/desktop está rodando.' }
@@ -246,8 +259,9 @@ const listDirSkill: Skill<ListDirArgs> = {
     const path = String(args.path ?? '').trim() || '~'
     const pattern = String(args.pattern ?? '').trim() || undefined
 
-    const sidecarOk = await isSidecarAvailable(ctx.signal)
-    const useSidecar = sidecarOk && !ctx.mock
+    const wsUrl = resolveSidecarWsUrl(ctx)
+    const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
+    const useSidecar = sidecarOk && !ctx.mock && !!wsUrl
 
     let entries: Array<{ name: string; type: string; size?: number }>
 
@@ -260,6 +274,7 @@ const listDirSkill: Skill<ListDirArgs> = {
           payload: { path, ...(pattern ? { pattern } : {}) },
         },
         ctx.signal,
+        wsUrl!,
       )
       if (!response || !response.ok) {
         ctx.emit(fsTrailEvent('list', path, undefined, response?.error))
@@ -320,8 +335,9 @@ const writeFileSkill: Skill<WriteFileArgs> = {
     if (!path) return { tool_message: 'Erro: "path" é obrigatório.' }
     if (!content) return { tool_message: 'Erro: "content" é obrigatório.' }
 
-    const sidecarOk = await isSidecarAvailable(ctx.signal)
-    const useSidecar = sidecarOk && !ctx.mock
+    const wsUrl = resolveSidecarWsUrl(ctx)
+    const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
+    const useSidecar = sidecarOk && !ctx.mock && !!wsUrl
 
     if (useSidecar) {
       const response = await callSidecar(
@@ -332,6 +348,7 @@ const writeFileSkill: Skill<WriteFileArgs> = {
           payload: { path, content },
         },
         ctx.signal,
+        wsUrl!,
       )
       if (!response || !response.ok) {
         ctx.emit(fsTrailEvent('write', path, undefined, response?.error))
@@ -406,8 +423,9 @@ const shellSkill: Skill<ShellArgs> = {
       }
     }
 
-    const sidecarOk = await isSidecarAvailable(ctx.signal)
-    const useSidecar = sidecarOk && !ctx.mock
+    const wsUrl = resolveSidecarWsUrl(ctx)
+    const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
+    const useSidecar = sidecarOk && !ctx.mock && !!wsUrl
 
     if (useSidecar) {
       const response = await callSidecar(
@@ -418,6 +436,7 @@ const shellSkill: Skill<ShellArgs> = {
           payload: { cmd, ...(cwd ? { cwd } : {}), timeout_sec: timeoutSec },
         },
         ctx.signal,
+        wsUrl!,
       )
       if (!response || !response.ok) {
         ctx.emit(shellTrailEvent(cmd, undefined, response?.error))
@@ -462,18 +481,27 @@ export function buildSidecarSkills(): Skill[] {
  * Verifica se o sidecar está disponível.
  * Útil para a UI mostrar indicador de status.
  */
-export async function checkSidecarStatus(): Promise<{
+export async function checkSidecarStatus(opts?: {
+  wsUrl?: string
+  timeoutMs?: number
+}): Promise<{
   available: boolean
   version?: string
+  root?: string
+  permissions?: string[]
   error?: string
 }> {
+  const wsUrl = opts?.wsUrl ?? null
+  if (!wsUrl) return { available: false, error: 'Sidecar não configurado.' }
   try {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 2000)
-    const available = await isSidecarAvailable(controller.signal)
+    const timeout = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 2500)
+    const response = await callSidecar({ id: uid(), type: 'shell', op: 'ping', payload: {} }, controller.signal, wsUrl)
     clearTimeout(timeout)
-    return { available }
+    if (!response || !response.ok) return { available: false, error: 'Sidecar não respondeu.' }
+    const result = (response.result ?? {}) as { version?: string; root?: string; permissions?: string[] }
+    return { available: true, version: result.version, root: result.root, permissions: result.permissions }
   } catch {
-    return { available: false, error: 'Timeout ao conectar' }
+    return { available: false, error: 'Falha ao conectar (token inválido ou processo parado?).' }
   }
 }

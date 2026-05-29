@@ -32,6 +32,7 @@ import {
   type SkillContext,
 } from '../../lib/chat-orchestrator'
 import { runChatTurnV2 } from '../../lib/chat-orchestrator-v2'
+import { loadSidecarConnectionConfig, getDefaultSidecarConnectionConfig } from '../../lib/chat-orchestrator/sidecar-config'
 import type { PreparedChatInputAttachment } from '../../lib/chat-attachment-ingestion'
 import { uploadChatInputAttachmentFile } from '../../lib/chat-input-storage'
 import { buildAttachmentContextSources, renderTurnUserContentForHistory } from '../../lib/chat-context-builder'
@@ -704,6 +705,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     let fallbackModels: Record<string, string[]> = {}
     let multimodalRuntimeConfig: MultimodalPolicyRuntimeConfig | undefined
     let apiKey = ''
+    let sidecarConfig = getDefaultSidecarConnectionConfig()
     const useChatV2 = isEnabled('FF_CHAT_ORCHESTRATOR_V2')
     try {
       if (mock) {
@@ -713,13 +715,15 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         fallbackModels = {}
         apiKey = 'demo'
       } else {
-        const [loadedModels, fallbackConfig, loadedMultimodalRuntime] = await Promise.all([
+        const [loadedModels, fallbackConfig, loadedMultimodalRuntime, loadedSidecar] = await Promise.all([
           useChatV2 ? loadChatOrchestratorV2Models(userId ?? undefined) : loadChatOrchestratorModels(userId ?? undefined),
           loadFallbackPriorityConfig(userId ?? undefined),
           loadMultimodalPolicyRuntimeConfig(userId ?? undefined),
+          loadSidecarConnectionConfig(userId ?? undefined),
         ])
         models = loadedModels
         multimodalRuntimeConfig = loadedMultimodalRuntime
+        sidecarConfig = loadedSidecar
         const resolveFallbacks = buildPipelineFallbackResolver(useChatV2 ? CHAT_ORCHESTRATOR_V2_AGENT_DEFS : CHAT_ORCHESTRATOR_AGENT_DEFS, fallbackConfig)
         fallbackModels = Object.fromEntries(
           Object.entries(models).map(([agentKey, model]) => [agentKey, resolveFallbacks(agentKey, model)]),
@@ -860,6 +864,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         models,
         fallbackModels,
         apiKey,
+        sidecar: sidecarConfig,
         signal: controller.signal,
         onTrail,
         onAgentToken: (agentKey: string, delta: string, total: string) => {

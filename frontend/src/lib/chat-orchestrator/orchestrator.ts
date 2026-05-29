@@ -96,6 +96,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     createApprovalRequest: input.createApprovalRequest,
     mock: Boolean(input.mock),
     profile,
+    sidecar: input.sidecar,
   }
 
   const systemPrompt = buildOrchestratorSystemPrompt(skills, input.effort, expectedDeliverables, profile)

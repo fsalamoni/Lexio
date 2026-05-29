@@ -110,6 +110,11 @@ export interface SkillContext {
    * fall back to the v1 defaults when absent.
    */
   profile?: ChatOrchestratorProfile
+  /**
+   * Resolved sidecar (PC) connection used by filesystem/shell skills. When
+   * absent, those skills fall back to demo mode. Loaded once per turn.
+   */
+  sidecar?: { token: string; host: string; port: number; enabled: boolean }
   /** Streaming callback: fires for each token delta produced by any specialist agent. */
   onAgentToken?: (agentKey: string, delta: string, total: string) => void
   /** Optional durable persistence hook; awaited before the runtime advances to the next iteration. */
@@ -211,6 +216,8 @@ export interface RunChatTurnInput {
   createApprovalRequest?: SkillContext['createApprovalRequest']
   /** Orchestration profile (defaults to v1 when omitted). Set by `runChatTurnV2`. */
   profile?: ChatOrchestratorProfile
+  /** Resolved sidecar (PC) connection for filesystem/shell skills. */
+  sidecar?: { token: string; host: string; port: number; enabled: boolean }
 }
 
 /**

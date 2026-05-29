@@ -147,6 +147,13 @@ export interface UserSettingsData {
     schema_version: number
     tools: Record<string, { enabled: boolean; params?: Record<string, unknown> }>
   }
+  /** Sidecar (PC) connection: pairing token + host/port for local file/shell actions. */
+  sidecar_connection?: {
+    token: string
+    host: string
+    port: number
+    enabled: boolean
+  }
   /** Default effort level used by the Chat orchestrator when the user opens a new conversation. */
   chat_effort_default?: ChatEffortLevel
   /** Timestamp of the last successful pairing handshake with the @lexio/desktop sidecar (no token persisted). */
