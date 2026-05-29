@@ -4,13 +4,31 @@
  * machine, inside a sandboxed workspace folder.
  *
  * Flow (like Claude Desktop / Manus / AionUI local connectors):
- *  1. User runs `npx @lexio/desktop --root <pasta>` locally.
+ *  1. User runs the @lexio/desktop sidecar locally (chooses a workspace folder).
  *  2. The sidecar prints a pairing token + the workspace path.
  *  3. User pastes the token here, clicks "Testar conexão" → handshake shows the
  *     real workspace root + permissions the local process granted.
+ *
+ * The card embeds a full, collapsible "Como funciona" explainer covering the
+ * mental model, local setup, platform setup, in-chat usage, and security — so
+ * the documentation lives where the user configures the feature.
  */
 import { useEffect, useState } from 'react'
-import { AlertCircle, CheckCircle2, FolderCog, Plug, RotateCcw, Save, WifiOff } from 'lucide-react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  FolderCog,
+  Info,
+  MonitorSmartphone,
+  Plug,
+  RotateCcw,
+  Save,
+  ShieldCheck,
+  Terminal,
+  WifiOff,
+} from 'lucide-react'
 import { checkSidecarStatus } from '../../lib/chat-orchestrator'
 import {
   buildSidecarWsUrl,
@@ -34,6 +52,7 @@ export default function SidecarConnectionCard() {
   const [dirty, setDirty] = useState(false)
   const [test, setTest] = useState<TestState>({ kind: 'idle' })
   const [message, setMessage] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null)
+  const [howToOpen, setHowToOpen] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -119,12 +138,111 @@ export default function SidecarConnectionCard() {
       )}
 
       <div className="px-6 py-4 space-y-4">
-        {/* Step-by-step setup */}
-        <ol className="text-sm text-slate-600 space-y-1 list-decimal list-inside bg-slate-50 rounded-lg p-3">
-          <li>No seu computador, rode: <code className="text-slate-800">npx @lexio/desktop --root "/caminho/da/pasta" --permissions read,write,execute</code></li>
-          <li>O agente exibirá um <strong>token de pareamento</strong> e a pasta de trabalho.</li>
-          <li>Cole o token abaixo e clique em <strong>Testar conexão</strong>.</li>
-        </ol>
+        {/* ── Como funciona (explicação completa, recolhível) ───────────────── */}
+        <div className="rounded-lg border border-indigo-100 bg-indigo-50/50">
+          <button
+            type="button"
+            onClick={() => setHowToOpen(o => !o)}
+            className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+            aria-expanded={howToOpen}
+          >
+            <span className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-900">
+              <Info className="h-4 w-4" /> Como funciona a Pasta local (PC)
+            </span>
+            {howToOpen ? <ChevronDown className="h-4 w-4 text-indigo-700" /> : <ChevronRight className="h-4 w-4 text-indigo-700" />}
+          </button>
+
+          {howToOpen && (
+            <div className="space-y-4 border-t border-indigo-100 px-4 py-4 text-sm text-slate-700">
+              {/* Modelo mental */}
+              <div>
+                <p className="font-semibold text-slate-800">Por que existem dois lados</p>
+                <p className="mt-1 text-slate-600">
+                  O Lexio roda <strong>no navegador</strong>, e o navegador não tem acesso ao disco do seu PC.
+                  Para o agente ler/escrever arquivos e rodar comandos, um <strong>programa local</strong> faz isso por
+                  ele — e a página aciona esse programa por uma conexão <strong>somente local</strong>. As duas peças se
+                  ligam por um <strong>token</strong>: o programa local gera, você cola aqui.
+                </p>
+                <pre className="mt-2 overflow-x-auto rounded-md bg-white/70 p-3 text-[11px] leading-relaxed text-slate-600 border border-indigo-100">{`PLATAFORMA (web)        ──ws://127.0.0.1:9420 (token)──▶   SEU PC (sidecar @lexio/desktop)
+chat + orquestrador     ◀──── {ok, result} / erro ──────   confinado a 1 pasta de trabalho`}</pre>
+              </div>
+
+              {/* 1. Configuração no PC */}
+              <div>
+                <p className="inline-flex items-center gap-2 font-semibold text-slate-800">
+                  <Terminal className="h-4 w-4 text-indigo-600" /> 1. Configuração no seu PC
+                </p>
+                <p className="mt-1 text-slate-600">Inicie o agente local escolhendo a pasta e o que ele pode fazer:</p>
+                <pre className="mt-2 overflow-x-auto rounded-md bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-100">{`node packages/desktop/bin/lexio-desktop.mjs \\
+  --root "/caminho/da/pasta" \\
+  --permissions read,write,execute`}</pre>
+                <p className="mt-2 text-slate-600">Ao iniciar, ele mostra a pasta de trabalho e um <strong>token de pareamento</strong>:</p>
+                <pre className="mt-2 overflow-x-auto rounded-md bg-white/70 p-3 text-[11px] leading-relaxed text-slate-600 border border-indigo-100">{`Pasta de trabalho : /caminho/da/pasta
+Permissões        : read, write, execute
+Endpoint          : ws://127.0.0.1:9420
+COLE este token no Lexio → kJ8x...token...A2c`}</pre>
+                <ul className="mt-2 list-disc space-y-0.5 pl-5 text-slate-600">
+                  <li><code>--root</code>: a <strong>pasta de trabalho</strong> (a sandbox). O agente só enxerga aqui dentro. Padrão: <code>~/Lexio</code>.</li>
+                  <li><code>--permissions</code>: <code>read,write,execute,delete,rename</code>. Padrão: <code>read,write</code>.</li>
+                  <li>O token é guardado em <code>~/.lexio/desktop.json</code> e se mantém entre reinícios.</li>
+                  <li><strong>Para revogar:</strong> feche o processo (Ctrl+C) — sem ele rodando, o chat não acessa o PC.</li>
+                </ul>
+              </div>
+
+              {/* 2. Configuração na plataforma */}
+              <div>
+                <p className="inline-flex items-center gap-2 font-semibold text-slate-800">
+                  <MonitorSmartphone className="h-4 w-4 text-indigo-600" /> 2. Configuração aqui na plataforma
+                </p>
+                <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-slate-600">
+                  <li>Ligue <strong>Habilitar ações no PC</strong> abaixo.</li>
+                  <li>Cole o <strong>token de pareamento</strong> no campo correspondente.</li>
+                  <li>Host/Porta: deixe <code>127.0.0.1</code> / <code>9420</code> (padrão).</li>
+                  <li>Clique em <strong>Testar conexão</strong> — confirma a pasta e as permissões reais.</li>
+                  <li>Clique em <strong>Salvar</strong> — a configuração fica vinculada à sua conta.</li>
+                </ol>
+              </div>
+
+              {/* 3. Uso no chat */}
+              <div>
+                <p className="inline-flex items-center gap-2 font-semibold text-slate-800">
+                  <FolderCog className="h-4 w-4 text-indigo-600" /> 3. Uso no chat
+                </p>
+                <p className="mt-1 text-slate-600">
+                  No <code>/chat</code>, peça em linguagem natural (ex.: <em>“leia o <code>contrato.docx</code> da minha
+                  pasta e salve um parecer como <code>parecer.md</code>”</em>). O agente decide as ações e mostra cada
+                  passo na trilha. Ferramentas disponíveis e a permissão que cada uma exige:
+                </p>
+                <ul className="mt-2 list-disc space-y-0.5 pl-5 text-slate-600">
+                  <li><code>list_directory</code> — lista arquivos/pastas (exige <strong>read</strong>)</li>
+                  <li><code>read_file</code> — lê um arquivo (exige <strong>read</strong>)</li>
+                  <li><code>write_file</code> — cria/sobrescreve um arquivo (exige <strong>write</strong>)</li>
+                  <li><code>run_shell</code> — executa um comando (exige <strong>execute</strong>)</li>
+                </ul>
+                <p className="mt-2 text-slate-600">
+                  Caminhos podem ser relativos (<code>notas/a.txt</code>), <code>~/…</code> ou absolutos — desde que
+                  <strong> dentro</strong> da pasta. Ações que alteram/executam podem pedir sua <strong>aprovação</strong> antes.
+                  Se o agente local não estiver rodando, as ferramentas entram em <strong>modo demonstração</strong> (nada é gravado).
+                </p>
+              </div>
+
+              {/* 4. Segurança */}
+              <div>
+                <p className="inline-flex items-center gap-2 font-semibold text-slate-800">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" /> Segurança
+                </p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-slate-600">
+                  <li><strong>Sandbox de pasta:</strong> caminhos com <code>../</code> ou fora da raiz são recusados.</li>
+                  <li><strong>Permissões explícitas:</strong> sem <code>write</code>/<code>execute</code>, essas ações são bloqueadas.</li>
+                  <li><strong>Comandos destrutivos bloqueados</strong> mesmo com <code>execute</code> (<code>rm -rf</code>, <code>sudo</code>, <code>curl|bash</code>, etc.).</li>
+                  <li><strong>Arquivos sensíveis</strong> nunca tocados: <code>.env</code>, <code>*.key</code>, <code>*.pem</code>, <code>id_rsa*</code>.</li>
+                  <li><strong>Só local + token:</strong> servidor em <code>127.0.0.1</code> (fora da rede) e toda conexão exige o token.</li>
+                  <li><strong>Limites:</strong> arquivos até 5 MB; comandos com timeout (até 30s). Encerrar o processo revoga tudo.</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
 
         <label className="flex items-center justify-between gap-3">
           <span className="text-sm font-medium text-slate-700">Habilitar ações no PC</span>
