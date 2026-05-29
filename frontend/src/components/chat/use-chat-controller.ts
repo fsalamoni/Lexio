@@ -31,6 +31,7 @@ import {
   runChatTurn,
   type SkillContext,
 } from '../../lib/chat-orchestrator'
+import { runChatTurnV2 } from '../../lib/chat-orchestrator-v2'
 import type { PreparedChatInputAttachment } from '../../lib/chat-attachment-ingestion'
 import { uploadChatInputAttachmentFile } from '../../lib/chat-input-storage'
 import { buildAttachmentContextSources, renderTurnUserContentForHistory } from '../../lib/chat-context-builder'
@@ -51,7 +52,9 @@ import {
 import {
   buildPipelineFallbackResolver,
   CHAT_ORCHESTRATOR_AGENT_DEFS,
+  CHAT_ORCHESTRATOR_V2_AGENT_DEFS,
   loadChatOrchestratorModels,
+  loadChatOrchestratorV2Models,
   loadFallbackPriorityConfig,
 } from '../../lib/model-config'
 import { loadMultimodalPolicyRuntimeConfig, type MultimodalPolicyRuntimeConfig } from '../../lib/multimodal-policy'
@@ -314,8 +317,9 @@ export async function resolveApprovalResumeRuntime(args: {
     }
   }
 
+  const useChatV2 = isEnabled('FF_CHAT_ORCHESTRATOR_V2')
   const [models, apiKey] = await Promise.all([
-    loadChatOrchestratorModels(userId ?? undefined),
+    useChatV2 ? loadChatOrchestratorV2Models(userId ?? undefined) : loadChatOrchestratorModels(userId ?? undefined),
     getOpenRouterKey(userId ?? undefined).catch(() => ''),
   ])
 
@@ -700,20 +704,23 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     let fallbackModels: Record<string, string[]> = {}
     let multimodalRuntimeConfig: MultimodalPolicyRuntimeConfig | undefined
     let apiKey = ''
+    const useChatV2 = isEnabled('FF_CHAT_ORCHESTRATOR_V2')
     try {
       if (mock) {
-        models = mockModelMap()
+        models = useChatV2
+          ? { cv2_orchestrator: 'demo/orchestrator', cv2_worker: 'demo/worker', cv2_critic: 'demo/critic' }
+          : mockModelMap()
         fallbackModels = {}
         apiKey = 'demo'
       } else {
         const [loadedModels, fallbackConfig, loadedMultimodalRuntime] = await Promise.all([
-          loadChatOrchestratorModels(userId ?? undefined),
+          useChatV2 ? loadChatOrchestratorV2Models(userId ?? undefined) : loadChatOrchestratorModels(userId ?? undefined),
           loadFallbackPriorityConfig(userId ?? undefined),
           loadMultimodalPolicyRuntimeConfig(userId ?? undefined),
         ])
         models = loadedModels
         multimodalRuntimeConfig = loadedMultimodalRuntime
-        const resolveFallbacks = buildPipelineFallbackResolver(CHAT_ORCHESTRATOR_AGENT_DEFS, fallbackConfig)
+        const resolveFallbacks = buildPipelineFallbackResolver(useChatV2 ? CHAT_ORCHESTRATOR_V2_AGENT_DEFS : CHAT_ORCHESTRATOR_AGENT_DEFS, fallbackConfig)
         fallbackModels = Object.fromEntries(
           Object.entries(models).map(([agentKey, model]) => [agentKey, resolveFallbacks(agentKey, model)]),
         )
@@ -841,7 +848,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     ])
 
     try {
-      const result = await runChatTurn({
+      const result = await (useChatV2 ? runChatTurnV2 : runChatTurn)({
         uid: userId ?? 'demo',
         conversationId,
         turnId,
