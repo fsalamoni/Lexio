@@ -17,6 +17,7 @@ import {
   ACERVO_EMENTA_AGENT_DEFS,
   AUDIO_PIPELINE_AGENT_DEFS,
   CHAT_ORCHESTRATOR_AGENT_DEFS,
+  CHAT_ORCHESTRATOR_V2_AGENT_DEFS,
   CONTEXT_DETAIL_AGENT_DEFS,
   DEFAULT_VIDEO_TTS_VOICE,
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
@@ -35,6 +36,7 @@ export {
   ACERVO_EMENTA_AGENT_DEFS,
   AUDIO_PIPELINE_AGENT_DEFS,
   CHAT_ORCHESTRATOR_AGENT_DEFS,
+  CHAT_ORCHESTRATOR_V2_AGENT_DEFS,
   CONTEXT_DETAIL_AGENT_DEFS,
   DEFAULT_VIDEO_TTS_VOICE,
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
@@ -779,6 +781,7 @@ type ScopedModelSettingsKey =
   | 'document_v3_models'
   | 'document_v4_models'
   | 'chat_orchestrator_models'
+  | 'chat_orchestrator_v2_models'
 
 function resolveScopedUid(uid?: string): string | undefined {
   return uid ?? getCurrentUserId() ?? undefined
@@ -1337,6 +1340,34 @@ export async function resetChatOrchestratorModels(uid?: string): Promise<void> {
   await resetScopedModelMap('chat_orchestrator_models', uid)
 }
 
+
+/** Map from chat-orchestrator v2 agent key → model ID */
+export type ChatOrchestratorV2ModelMap = Record<string, string>
+
+/** Default model map for the chat orchestrator v2 pipeline (lean group + tools). */
+export function getDefaultChatOrchestratorV2ModelMap(): ChatOrchestratorV2ModelMap {
+  const map: ChatOrchestratorV2ModelMap = {}
+  for (const def of CHAT_ORCHESTRATOR_V2_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/** Load chat orchestrator v2 model configuration. */
+export async function loadChatOrchestratorV2Models(uid?: string): Promise<ChatOrchestratorV2ModelMap> {
+  return loadScopedModelMap('chat_orchestrator_v2_models', CHAT_ORCHESTRATOR_V2_AGENT_DEFS, getDefaultChatOrchestratorV2ModelMap(), uid)
+}
+
+/** Save chat orchestrator v2 model configuration to Firestore. */
+export async function saveChatOrchestratorV2Models(models: ChatOrchestratorV2ModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('chat_orchestrator_v2_models', CHAT_ORCHESTRATOR_V2_AGENT_DEFS, getDefaultChatOrchestratorV2ModelMap(), models, uid)
+}
+
+/** Reset chat orchestrator v2 models to defaults. */
+export async function resetChatOrchestratorV2Models(uid?: string): Promise<void> {
+  await resetScopedModelMap('chat_orchestrator_v2_models', uid)
+}
+
 export const AGENT_CONFIG_DEFS: Record<ScopedModelSettingsKey, AgentModelDef[]> = {
   agent_models: PIPELINE_AGENT_DEFS,
   thesis_analyst_models: THESIS_ANALYST_AGENT_DEFS,
@@ -1352,6 +1383,7 @@ export const AGENT_CONFIG_DEFS: Record<ScopedModelSettingsKey, AgentModelDef[]> 
   document_v3_models: DOCUMENT_V3_PIPELINE_AGENT_DEFS,
   document_v4_models: DOCUMENT_V4_PIPELINE_AGENT_DEFS,
   chat_orchestrator_models: CHAT_ORCHESTRATOR_AGENT_DEFS,
+  chat_orchestrator_v2_models: CHAT_ORCHESTRATOR_V2_AGENT_DEFS,
 }
 
 export async function validateScopedAgentModels(

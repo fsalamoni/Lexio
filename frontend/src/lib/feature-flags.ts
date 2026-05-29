@@ -192,6 +192,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_DOCUMENT_GENERATION_V4',
     devToggleable: true,
   },
+  {
+    key: 'FF_CHAT_ORCHESTRATOR_V2',
+    label: 'Orquestrador do Chat v2 (grupo enxuto + ferramentas)',
+    description: 'Habilita o orquestrador do Chat v2: um grupo pequeno de agentes (líder + trabalhador + crítico) que dirige o catálogo completo de ferramentas (mídia, web, PC) em loop, em paralelo ao v1',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_ORCHESTRATOR_V2',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────

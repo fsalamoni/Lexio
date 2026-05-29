@@ -135,6 +135,18 @@ export interface UserSettingsData {
     tools: Record<string, { enabled: boolean; params?: Record<string, unknown> }>
   }
   chat_orchestrator_models?: Record<string, string>
+  /** Per-agent models for the Chat orchestrator v2 lean pipeline (cv2_orchestrator, cv2_worker, cv2_critic). */
+  chat_orchestrator_v2_models?: Record<string, string>
+  /**
+   * Per-user tool catalog for the Chat orchestrator v2 lean pipeline.
+   * Keyed by tool/skill name; missing tools fall back to the catalog default.
+   * `schema_version` is read by the loader so future migrations can grow the
+   * shape without breaking existing user docs.
+   */
+  chat_orchestrator_v2_tools?: {
+    schema_version: number
+    tools: Record<string, { enabled: boolean; params?: Record<string, unknown> }>
+  }
   /** Default effort level used by the Chat orchestrator when the user opens a new conversation. */
   chat_effort_default?: ChatEffortLevel
   /** Timestamp of the last successful pairing handshake with the @lexio/desktop sidecar (no token persisted). */

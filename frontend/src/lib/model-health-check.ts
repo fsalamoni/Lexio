@@ -38,6 +38,7 @@ const AGENT_CONFIG_KEYS = [
   'document_v3_models',
   'document_v4_models',
   'chat_orchestrator_models',
+  'chat_orchestrator_v2_models',
 ] as const
 
 /** Key under which we store the last health check timestamp */

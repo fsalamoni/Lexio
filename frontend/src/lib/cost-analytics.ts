@@ -3,7 +3,7 @@ import { DOCTYPE_LABELS } from './constants'
 import { PROVIDERS, providerIdFromLabel } from './providers'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 
-export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'document_generation_v4' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator' | 'chat_attachment_ingestion' | 'chat_artifact_generation' | 'chat_export_materialization' | 'chat_multimodal_analysis'
+export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'document_generation_v4' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator' | 'chat_orchestrator_v2' | 'chat_attachment_ingestion' | 'chat_artifact_generation' | 'chat_export_materialization' | 'chat_multimodal_analysis'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -119,6 +119,7 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   presentation_pipeline: 'Pipeline de Apresentação',
   presentation_pipeline_v2: 'Gerador de Apresentação v2',
   chat_orchestrator: 'Orquestrador (Chat)',
+  chat_orchestrator_v2: 'Orquestrador Chat v2',
   chat_attachment_ingestion: 'Chat: Ingestão de anexos',
   chat_artifact_generation: 'Chat: Geração de artefatos',
   chat_export_materialization: 'Chat: Materialização de exports',
@@ -270,6 +271,10 @@ const PHASE_LABELS: Record<string, string> = {
   presentation_v2_packager: 'Apresentação v2: Empacotador',
   // ── Chat orchestrator phases ──
   chat_orchestrator: 'Chat: Orquestrador',
+  // ── Chat orchestrator v2 phases (lean group) ──
+  cv2_orchestrator: 'Chat v2: Orquestrador (Líder)',
+  cv2_worker: 'Chat v2: Trabalhador',
+  cv2_critic: 'Chat v2: Crítico',
   chat_planner: 'Chat: Planejador',
   chat_clarifier: 'Chat: Esclarecedor',
   chat_legal_researcher: 'Chat: Pesquisador Jurídico',
