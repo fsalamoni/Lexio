@@ -44,6 +44,7 @@ describe('user-scoped agent configuration coverage', () => {
       'agent_models',
       'audio_pipeline_models',
       'chat_orchestrator_models',
+      'chat_orchestrator_v2_models',
       'context_detail_models',
       'document_v3_models',
       'document_v4_models',
@@ -53,6 +54,14 @@ describe('user-scoped agent configuration coverage', () => {
       'research_notebook_models',
       'thesis_analyst_models',
       'video_pipeline_models',
+    ])
+  })
+
+  it('registers the lean chat orchestrator v2 agent group', () => {
+    expect(AGENT_CONFIG_DEFS.chat_orchestrator_v2_models.map(agent => agent.key)).toEqual([
+      'cv2_orchestrator',
+      'cv2_worker',
+      'cv2_critic',
     ])
   })
 
