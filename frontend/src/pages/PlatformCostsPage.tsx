@@ -204,6 +204,10 @@ export default function PlatformCostsPage() {
     () => breakdown?.by_function.find(row => row.key === 'document_generation_v4') ?? null,
     [breakdown],
   )
+  const chatOrchestratorV2Function = useMemo(
+    () => breakdown?.by_function.find(row => row.key === 'chat_orchestrator_v2') ?? null,
+    [breakdown],
+  )
   const thesisAnalysisFunction = useMemo(
     () => breakdown?.by_function.find(row => row.key === 'thesis_analysis') ?? null,
     [breakdown],
@@ -304,6 +308,15 @@ export default function PlatformCostsPage() {
               </p>
               <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
                 {documentV4Function ? `${fmtInt(documentV4Function.calls)} chamadas` : 'Nenhuma execução registrada'}
+              </p>
+            </div>
+            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Orquestrador Chat v2</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                {chatOrchestratorV2Function ? fmtUsd(chatOrchestratorV2Function.cost_usd) : 'Sem consumo'}
+              </p>
+              <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
+                {chatOrchestratorV2Function ? `${fmtInt(chatOrchestratorV2Function.calls)} chamadas` : 'Nenhuma execução registrada'}
               </p>
             </div>
             <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">

@@ -41,6 +41,8 @@ import ChatOrchestratorConfigCard from '../components/ChatOrchestratorConfigCard
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
 import DocumentV4PipelineConfigCard from '../components/admin/DocumentV4PipelineConfigCard'
 import DocumentV4ToolsConfigCard from '../components/admin/DocumentV4ToolsConfigCard'
+import ChatOrchestratorV2ConfigCard from '../components/admin/ChatOrchestratorV2ConfigCard'
+import ChatOrchestratorV2ToolsConfigCard from '../components/admin/ChatOrchestratorV2ToolsConfigCard'
 import { isEnabled as isFeatureEnabled } from '../lib/feature-flags'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
 import MultimodalPolicyCard from '../components/admin/MultimodalPolicyCard'
@@ -1052,6 +1054,34 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <DocumentV4ToolsConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Chat Orchestrator V2 — model config — gated by FF_CHAT_ORCHESTRATOR_V2 */}
+      {IS_FIREBASE && isFeatureEnabled('FF_CHAT_ORCHESTRATOR_V2') && (
+        <AdminCollapsibleSection
+          id="section_chat_orchestrator_v2_config"
+          title="Orquestrador do Chat v2 — Modelos do grupo enxuto"
+          icon={Brain}
+          iconColor="text-indigo-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ChatOrchestratorV2ConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Chat Orchestrator V2 — tools config — gated by FF_CHAT_ORCHESTRATOR_V2 */}
+      {IS_FIREBASE && isFeatureEnabled('FF_CHAT_ORCHESTRATOR_V2') && (
+        <AdminCollapsibleSection
+          id="section_chat_orchestrator_v2_tools_config"
+          title="Ferramentas do Chat v2 — catálogo"
+          icon={Brain}
+          iconColor="text-indigo-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <ChatOrchestratorV2ToolsConfigCard />
         </AdminCollapsibleSection>
       )}
 

@@ -38,6 +38,7 @@ const COST_SECTION_IDS = [
   'section_audio_pipeline',
   'section_presentation_pipeline',
   'section_chat_orchestrator',
+  'section_chat_orchestrator_v2',
   'section_presentation_pipeline_v2',
 ] as const
 
@@ -433,8 +434,8 @@ export default function CostTokensPage() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Split executions into all 11 function keys
-  const { docBreakdown, docV3Breakdown, docV4Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, presentationV2Breakdown, chatOrchestratorBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, docV4Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, presentationV2Breakdown: null, chatOrchestratorBreakdown: null, highlights: [] }
+  const { docBreakdown, docV3Breakdown, docV4Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, presentationV2Breakdown, chatOrchestratorBreakdown, chatOrchestratorV2Breakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, docV4Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, presentationV2Breakdown: null, chatOrchestratorBreakdown: null, chatOrchestratorV2Breakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
@@ -454,6 +455,7 @@ export default function CostTokensPage() {
     const presentationItems = breakdown.by_agent_function.filter(item => item.key.startsWith('presentation_pipeline::'))
     const presentationV2Items = breakdown.by_agent_function.filter(item => item.key.startsWith('presentation_pipeline_v2::'))
     const chatOrchestratorItems = breakdown.by_agent_function.filter(item => item.key.startsWith('chat_orchestrator::'))
+    const chatOrchestratorV2Items = breakdown.by_agent_function.filter(item => item.key.startsWith('chat_orchestrator_v2::'))
 
     // Build approximate sub-breakdowns using available summary data
     const docFunc = breakdown.by_function.find(f => f.key === 'document_generation')
@@ -470,6 +472,7 @@ export default function CostTokensPage() {
     const presentationFunc = breakdown.by_function.find(f => f.key === 'presentation_pipeline')
     const presentationV2Func = breakdown.by_function.find(f => f.key === 'presentation_pipeline_v2')
     const chatOrchestratorFunc = breakdown.by_function.find(f => f.key === 'chat_orchestrator')
+    const chatOrchestratorV2Func = breakdown.by_function.find(f => f.key === 'chat_orchestrator_v2')
 
     const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[], funcKey?: string): CostBreakdown | null => {
       if (!func && agentItems.length === 0) return null
@@ -525,6 +528,7 @@ export default function CostTokensPage() {
     const presentationBd = makeSub(presentationFunc, presentationItems, 'presentation_pipeline')
     const presentationV2Bd = makeSub(presentationV2Func, presentationV2Items, 'presentation_pipeline_v2')
     const chatOrchestratorBd = makeSub(chatOrchestratorFunc, chatOrchestratorItems, 'chat_orchestrator')
+    const chatOrchestratorV2Bd = makeSub(chatOrchestratorV2Func, chatOrchestratorV2Items, 'chat_orchestrator_v2')
 
     // Build highlights
     const hl: { label: string; value: string; meta: string }[] = []
@@ -546,7 +550,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, docV4Breakdown: docV4Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, presentationV2Breakdown: presentationV2Bd, chatOrchestratorBreakdown: chatOrchestratorBd, highlights: hl }
+    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, docV4Breakdown: docV4Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, presentationV2Breakdown: presentationV2Bd, chatOrchestratorBreakdown: chatOrchestratorBd, chatOrchestratorV2Breakdown: chatOrchestratorV2Bd, highlights: hl }
   }, [breakdown])
 
   // ── Budget status ──────────────────────────────────────────────────────
@@ -1131,6 +1135,28 @@ export default function CostTokensPage() {
               />
             ) : (
               <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o orquestrador (chat).</p>
+            )}
+          </CollapsibleSection>
+
+          {/* ── Section 14: Chat Orchestrator v2 (lean group) ────────── */}
+          <CollapsibleSection
+            id="section_chat_orchestrator_v2"
+            title="Orquestrador Chat v2"
+            icon={MessagesSquare}
+            iconColor="text-violet-600"
+            badge={chatOrchestratorV2Breakdown ? fmtUsd(chatOrchestratorV2Breakdown.total_cost_usd) : undefined}
+            collapseState={collapseState}
+            onToggle={toggleCollapse}
+          >
+            {chatOrchestratorV2Breakdown ? (
+              <SectionBreakdown
+                sectionId="chat_orchestrator_v2"
+                breakdown={chatOrchestratorV2Breakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            ) : (
+              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o orquestrador Chat v2.</p>
             )}
           </CollapsibleSection>
         </>
