@@ -185,6 +185,8 @@ export interface EffortPreset {
   criticInterval: number
   /** Compress history when used / max ≥ this threshold. */
   summarizeAt: number
+  /** Optional hard USD ceiling per turn (enforced when FF_CHAT_ENGINE_PLUS is on). */
+  maxCostUsd?: number
 }
 
 /** Budget tracker — stops the loop when limits are exceeded. */

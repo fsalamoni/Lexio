@@ -62,7 +62,9 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
 
   const preset = EFFORT_PRESETS[input.effort]
   const profile = input.profile ?? DEFAULT_V1_PROFILE
-  const budget = createBudget(preset.maxTokens)
+  // Hard USD ceiling is opt-in (FF_CHAT_ENGINE_PLUS); without it only the token
+  // cap / hard stop apply, preserving the original behavior.
+  const budget = createBudget(preset.maxTokens, isEnabled('FF_CHAT_ENGINE_PLUS') ? preset.maxCostUsd : undefined)
   // The orchestrator commands the whole turn — under lean orchestration it is
   // never token-capped and never force-summarised: only an explicit hard stop
   // (user cancel) or the iteration ceiling end the loop.
