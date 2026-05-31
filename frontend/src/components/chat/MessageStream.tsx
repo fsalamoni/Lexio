@@ -62,7 +62,13 @@ export default function MessageStream({ turns, liveTurn, emptyState, onSendPendi
   }
 
   return (
-    <div className="flex flex-col gap-6 overflow-y-auto overflow-x-hidden px-4 py-6 flex-1 min-h-0 chat-stream-scrollbar">
+    <div
+      role="log"
+      aria-live="polite"
+      aria-label="Conversa com o orquestrador"
+      aria-busy={Boolean(liveTurn)}
+      className="flex flex-col gap-6 overflow-y-auto overflow-x-hidden px-4 py-6 flex-1 min-h-0 chat-stream-scrollbar"
+    >
       {allTurns.map((turn, idx) => (
         <TurnBlock
           key={turn.id ?? `t-${idx}`}

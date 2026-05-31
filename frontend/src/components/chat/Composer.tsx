@@ -160,6 +160,7 @@ export default function Composer({ onSend, disabled, busy, placeholder }: Compos
         onKeyDown={onKeyDown}
         onPaste={onPaste}
         rows={2}
+        aria-label="Mensagem para o orquestrador"
         placeholder={placeholder ?? 'Pergunte ao orquestrador… (Enter envia, Shift+Enter quebra a linha)'}
         disabled={disabled}
         className="w-full resize-none border-0 bg-transparent text-sm leading-6 text-[var(--v2-ink-strong)] placeholder:text-[var(--v2-ink-faint)] focus:outline-none disabled:opacity-60"
