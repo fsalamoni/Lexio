@@ -18,6 +18,7 @@ const chatMocks = vi.hoisted(() => ({
   listChatTurnsMock: vi.fn(),
   renameChatConversationMock: vi.fn(),
   updateChatConversationPreviewMock: vi.fn(),
+  setChatConversationPinnedMock: vi.fn(),
 }))
 
 vi.mock('../../contexts/AuthContext', () => ({
@@ -33,9 +34,11 @@ vi.mock('../../lib/firestore-service', () => ({
   listChatTurns: (...args: unknown[]) => chatMocks.listChatTurnsMock(...args),
   renameChatConversation: (...args: unknown[]) => chatMocks.renameChatConversationMock(...args),
   updateChatConversationPreview: (...args: unknown[]) => chatMocks.updateChatConversationPreviewMock(...args),
+  setChatConversationPinned: (...args: unknown[]) => chatMocks.setChatConversationPinnedMock(...args),
 }))
 
 import ConversationList from './ConversationList'
+import { clearRuntimeFeatureFlags, setRuntimeFeatureFlags } from '../../lib/feature-flags'
 
 function renderList(props?: Partial<{ activeId: string | null; onSelect: (id: string) => void }>) {
   const onSelect = props?.onSelect ?? vi.fn()
@@ -76,6 +79,7 @@ describe('ConversationList', () => {
 
   afterEach(() => {
     cleanup()
+    clearRuntimeFeatureFlags()
   })
 
   it('loads and renders existing conversations', async () => {
@@ -216,6 +220,40 @@ describe('ConversationList', () => {
       'Histórico preservado da contratação emergencial.',
     )
     expect(screen.getAllByRole('button', { name: 'Nova conversa' })).toHaveLength(1)
+  })
+
+  it('filters conversations by search when convo tools are on', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_CONVO_TOOLS: true })
+    chatMocks.listChatConversationsMock.mockResolvedValue({
+      items: [
+        { id: 'c1', title: 'Parecer tributário', effort: 'medio', created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T10:00:00.000Z' },
+        { id: 'c2', title: 'Petição trabalhista', effort: 'medio', created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T10:00:00.000Z' },
+      ],
+    })
+
+    renderList({ activeId: null })
+    await screen.findByRole('button', { name: 'Parecer tributário' })
+
+    fireEvent.change(screen.getByPlaceholderText(/buscar conversas/i), { target: { value: 'trabalhista' } })
+
+    expect(screen.queryByRole('button', { name: 'Parecer tributário' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Petição trabalhista' })).toBeTruthy()
+  })
+
+  it('sorts pinned conversations to the top when convo tools are on', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_CONVO_TOOLS: true })
+    chatMocks.listChatConversationsMock.mockResolvedValue({
+      items: [
+        { id: 'c1', title: 'Sem fixar', effort: 'medio', created_at: '2026-05-08T10:00:00.000Z', updated_at: '2026-05-08T12:00:00.000Z' },
+        { id: 'c2', title: 'Fixada', pinned_at: '2026-05-08T11:00:00.000Z', effort: 'medio', created_at: '2026-05-08T09:00:00.000Z', updated_at: '2026-05-08T09:00:00.000Z' },
+      ],
+    })
+
+    renderList({ activeId: null })
+    await screen.findByRole('button', { name: 'Fixada' })
+
+    const titles = screen.getAllByRole('button', { name: /Fixada|Sem fixar/ }).map(b => b.textContent)
+    expect(titles[0]).toBe('Fixada') // pinned first despite older updated_at
   })
 
   it('creates a new conversation and selects it', async () => {

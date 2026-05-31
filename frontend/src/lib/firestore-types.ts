@@ -1530,6 +1530,8 @@ export interface ChatConversationData {
   sidecar_root_path?: string
   /** Short preview of the latest assistant answer (used in the sidebar list). */
   last_preview?: string
+  /** Pin marker — pinned conversations sort to the top of the list. Empty/absent = not pinned. */
+  pinned_at?: string
   created_at: string
   updated_at: string
   /** Soft-delete marker. Conversations with this field are hidden from normal lists but their turns remain preserved. */

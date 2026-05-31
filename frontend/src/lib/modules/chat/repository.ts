@@ -356,6 +356,16 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     )
   }
 
+  async function setChatConversationPinned(uid: string, conversationId: string, pinned: boolean): Promise<void> {
+    const db = deps.ensureFirestore()
+    const effectiveUid = await deps.resolveEffectiveUid(uid, 'setChatConversationPinned')
+    const ref = chatConversationDoc(db, effectiveUid, conversationId)
+    await deps.withFirestoreRetry(
+      () => updateDoc(ref, { pinned_at: pinned ? new Date().toISOString() : '', updated_at: new Date().toISOString() }),
+      'setChatConversationPinned.update',
+    )
+  }
+
   async function updateChatConversationPreview(uid: string, conversationId: string, preview: string): Promise<void> {
     const db = deps.ensureFirestore()
     const effectiveUid = await deps.resolveEffectiveUid(uid, 'updateChatConversationPreview')
@@ -820,6 +830,7 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     renameChatConversation,
     updateChatConversationEffort,
     updateChatConversationPreview,
+    setChatConversationPinned,
     deleteChatConversation,
     listChatTurns,
     appendChatTurn,

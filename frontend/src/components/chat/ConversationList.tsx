@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Archive, Loader2, MessagesSquare, Pencil, Plus } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Archive, Loader2, MessagesSquare, Pencil, Pin, PinOff, Plus, Search } from 'lucide-react'
 import clsx from 'clsx'
 import type { ChatConversationData } from '../../lib/firestore-types'
 import {
@@ -8,10 +8,12 @@ import {
   listChatConversations,
   listChatTurns,
   renameChatConversation,
+  setChatConversationPinned,
   updateChatConversationPreview,
 } from '../../lib/firestore-service'
 import { useAuth } from '../../contexts/AuthContext'
 import { IS_FIREBASE } from '../../lib/firebase'
+import { isEnabled } from '../../lib/feature-flags'
 import {
   deriveChatConversationPreviewFromTurns,
   deriveChatConversationTitleFromTurns,
@@ -35,6 +37,19 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
   const [renameDraft, setRenameDraft] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retryFlag, setRetryFlag] = useState(0)
+  const [query, setQuery] = useState('')
+  const convoTools = isEnabled('FF_CHAT_CONVO_TOOLS')
+
+  const visibleItems = useMemo(() => {
+    let list = items
+    if (convoTools && query.trim()) {
+      const q = query.trim().toLowerCase()
+      list = list.filter(it => `${it.title} ${it.last_preview ?? ''}`.toLowerCase().includes(q))
+    }
+    if (!convoTools) return list
+    // Pinned conversations sort to the top, preserving the underlying order otherwise.
+    return [...list].sort((a, b) => Number(Boolean(b.pinned_at)) - Number(Boolean(a.pinned_at)))
+  }, [items, query, convoTools])
 
   useEffect(() => {
     let cancelled = false
@@ -132,6 +147,18 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
     }
   }
 
+  const handleTogglePin = async (id: string, pinned: boolean) => {
+    const pinned_at = pinned ? new Date().toISOString() : ''
+    setItems(prev => prev.map(it => (it.id === id ? { ...it, pinned_at } : it)))
+    if (IS_FIREBASE && userId) {
+      try {
+        await setChatConversationPinned(userId, id, pinned)
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
   return (
     <div className="flex h-full flex-col gap-2 border-r border-[var(--v2-border)] bg-white/60 p-3">
       <button
@@ -143,6 +170,18 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
         {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
         Nova conversa
       </button>
+      {convoTools && items.length > 0 && (
+        <div className="relative mt-1">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--v2-ink-faint)]" />
+          <input
+            type="search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Buscar conversas…"
+            className="w-full rounded-lg border border-[var(--v2-border)] bg-white py-1.5 pl-7 pr-2 text-xs"
+          />
+        </div>
+      )}
       <div className="mt-2 flex-1 overflow-y-auto">
         {loading && (
           <div className="flex items-center gap-2 px-2 py-3 text-xs text-[var(--v2-ink-faint)]">
@@ -167,10 +206,16 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
             Nenhuma conversa ainda. Comece criando uma nova.
           </div>
         )}
+        {!loading && !loadError && items.length > 0 && visibleItems.length === 0 && (
+          <div className="px-2 py-6 text-center text-xs text-[var(--v2-ink-faint)]">
+            Nenhuma conversa corresponde à busca.
+          </div>
+        )}
         <ul className="flex flex-col gap-1">
-          {items.map(item => {
+          {visibleItems.map(item => {
             const active = item.id === activeId
             const isRenaming = renamingId === item.id
+            const pinned = Boolean(item.pinned_at)
             return (
               <li key={item.id ?? `r-${item.created_at}`}>
                 <div
@@ -179,7 +224,9 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
                     active ? 'bg-indigo-100 text-indigo-900' : 'hover:bg-[var(--v2-border)]',
                   )}
                 >
-                  <MessagesSquare className={clsx('h-3.5 w-3.5 shrink-0', active ? 'text-indigo-600' : 'text-[var(--v2-ink-faint)]')} />
+                  {convoTools && pinned
+                    ? <Pin className={clsx('h-3.5 w-3.5 shrink-0', active ? 'text-indigo-600' : 'text-amber-500')} />
+                    : <MessagesSquare className={clsx('h-3.5 w-3.5 shrink-0', active ? 'text-indigo-600' : 'text-[var(--v2-ink-faint)]')} />}
                   {isRenaming ? (
                     <input
                       autoFocus
@@ -207,6 +254,16 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
                   )}
                   {!isRenaming && item.id && (
                     <div className="hidden items-center gap-1 group-hover:flex">
+                      {convoTools && (
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePin(item.id!, !pinned)}
+                          className="rounded p-1 text-[var(--v2-ink-faint)] hover:bg-white hover:text-[var(--v2-ink-strong)]"
+                          title={pinned ? 'Desafixar' : 'Fixar no topo'}
+                        >
+                          {pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => startRename(item.id!, item.title)}
