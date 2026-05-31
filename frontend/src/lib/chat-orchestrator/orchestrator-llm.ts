@@ -1,4 +1,5 @@
 import { callLLMWithMessages, callLLMWithMessagesFallback } from '../llm-client'
+import { isEnabled } from '../feature-flags'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import type { UsageExecutionRecord } from '../cost-analytics'
 import type { OrchestratorLLMCall, OrchestratorMessage } from './types'
@@ -34,7 +35,10 @@ export const callOrchestratorLLM: OrchestratorLLMCall = async (params) => {
   const startedAt = Date.now()
   
   // ─ Streaming path: use onToken for real-time thought emission ─
-  const llmOptions = onToken ? { signal, onToken } : { signal }
+  // Prompt caching is opt-in (FF_CHAT_ENGINE_PLUS) and a no-op for non-Anthropic
+  // models; the large, stable system prompt is the ideal cache target.
+  const cacheSystemPrompt = isEnabled('FF_CHAT_ENGINE_PLUS')
+  const llmOptions = onToken ? { signal, onToken, cacheSystemPrompt } : { signal, cacheSystemPrompt }
   
   let result
   try {
