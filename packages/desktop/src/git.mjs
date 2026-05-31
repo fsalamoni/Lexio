@@ -13,10 +13,28 @@ const GIT_TIMEOUT_MS = 30_000
 const GIT_MAX_BUFFER = 8 * 1024 * 1024
 const GIT_OUTPUT_CAP = 16_000
 
+/**
+ * Build the env that authenticates a single git invocation with a GitHub token,
+ * WITHOUT touching argv (so the token never appears in `ps`) or persisting it to
+ * the repo config. Uses git's env-based config (`GIT_CONFIG_*`) to inject an
+ * `http.extraHeader` Basic auth header. Returns undefined when no token.
+ */
+export function buildGitAuthEnv(token) {
+  if (!token || typeof token !== 'string') return undefined
+  const basic = Buffer.from(`x-access-token:${token}`).toString('base64')
+  return {
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'http.extraHeader',
+    GIT_CONFIG_VALUE_0: `Authorization: Basic ${basic}`,
+    GIT_TERMINAL_PROMPT: '0', // never block waiting for a credential prompt
+  }
+}
+
 /** Run a git subcommand, resolving with `{ code, stdout, stderr }`. */
-export function runGit(args, cwd, timeoutMs = GIT_TIMEOUT_MS) {
+export function runGit(args, cwd, timeoutMs = GIT_TIMEOUT_MS, authEnv) {
   return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer: GIT_MAX_BUFFER }, (err, stdout, stderr) => {
+    const env = authEnv ? { ...process.env, ...authEnv } : process.env
+    execFile('git', args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer: GIT_MAX_BUFFER, env }, (err, stdout, stderr) => {
       // Spawn-level failure (git missing, timeout) → reject as a SandboxError.
       if (err && typeof err.code !== 'number') {
         if (err.code === 'ENOENT') {
@@ -97,7 +115,7 @@ export async function gitPull(cwd, payload = {}) {
   const args = ['pull']
   if (typeof payload.remote === 'string' && payload.remote.trim()) args.push(payload.remote.trim())
   if (typeof payload.branch === 'string' && payload.branch.trim()) args.push(payload.branch.trim())
-  const res = await runGit(args, cwd)
+  const res = await runGit(args, cwd, GIT_TIMEOUT_MS, buildGitAuthEnv(payload.token))
   const output = `${res.stdout}${res.stderr ? `\n${res.stderr}` : ''}`.trim()
   return { code: res.code, output, ok: res.code === 0 }
 }
@@ -106,7 +124,7 @@ export async function gitPush(cwd, payload = {}) {
   const args = ['push']
   if (typeof payload.remote === 'string' && payload.remote.trim()) args.push(payload.remote.trim())
   if (typeof payload.branch === 'string' && payload.branch.trim()) args.push(payload.branch.trim())
-  const res = await runGit(args, cwd)
+  const res = await runGit(args, cwd, GIT_TIMEOUT_MS, buildGitAuthEnv(payload.token))
   const output = `${res.stdout}${res.stderr ? `\n${res.stderr}` : ''}`.trim()
   return { code: res.code, output, ok: res.code === 0 }
 }

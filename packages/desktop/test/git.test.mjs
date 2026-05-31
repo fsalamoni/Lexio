@@ -3,8 +3,21 @@ import assert from 'node:assert/strict'
 import os from 'node:os'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { parsePorcelainStatus, runGit } from '../src/git.mjs'
+import { buildGitAuthEnv, parsePorcelainStatus, runGit } from '../src/git.mjs'
 import { createHandler } from '../src/handler.mjs'
+
+test('buildGitAuthEnv injects an ephemeral Basic auth header via env (not argv)', () => {
+  const env = buildGitAuthEnv('ghp_abc123')
+  assert.equal(env.GIT_CONFIG_COUNT, '1')
+  assert.equal(env.GIT_CONFIG_KEY_0, 'http.extraHeader')
+  assert.equal(env.GIT_CONFIG_VALUE_0, `Authorization: Basic ${Buffer.from('x-access-token:ghp_abc123').toString('base64')}`)
+  assert.equal(env.GIT_TERMINAL_PROMPT, '0')
+})
+
+test('buildGitAuthEnv returns undefined without a token', () => {
+  assert.equal(buildGitAuthEnv(''), undefined)
+  assert.equal(buildGitAuthEnv(undefined), undefined)
+})
 
 test('parsePorcelainStatus extracts branch, ahead/behind and files', () => {
   const parsed = parsePorcelainStatus('## main...origin/main [ahead 1, behind 2]\n M a.txt\n?? b.txt')

@@ -18,6 +18,7 @@
 import type { ChatSidecarPermission, ChatTrailEvent } from '../firestore-types'
 import type { ChatSidecarAuditEntryInput, Skill, SkillContext, SkillResult } from './types'
 import { DEFAULT_SIDECAR_HOST, DEFAULT_SIDECAR_PORT } from './sidecar-config'
+import { loadGithubConnectorConfig } from './github-config'
 import { isEnabled } from '../feature-flags'
 
 // ── Configuração do Sidecar ───────────────────────────────────────────────────
@@ -864,7 +865,14 @@ function buildGitRemoteSkill(op: 'pull' | 'push'): Skill<GitRemoteArgs> {
           resumeArgs: { ...(remote ? { remote } : {}), ...(branch ? { branch } : {}), ...(cwd ? { cwd } : {}) },
         })
       }
-      const res = await callGit(ctx, op, { ...(remote ? { remote } : {}), ...(branch ? { branch } : {}), ...(cwd ? { cwd } : {}) })
+      // Authenticate against GitHub remotes with the user's PAT when the GitHub
+      // connector is on. Loaded fresh at execution time — never stored in the
+      // approval/resume args. The sidecar uses it via an ephemeral http header.
+      let token: string | undefined
+      if (isEnabled('FF_CHAT_GITHUB')) {
+        try { token = (await loadGithubConnectorConfig(ctx.uid)).token || undefined } catch { /* no token */ }
+      }
+      const res = await callGit(ctx, op, { ...(remote ? { remote } : {}), ...(branch ? { branch } : {}), ...(cwd ? { cwd } : {}), ...(token ? { token } : {}) })
       if (!res.useSidecar) { ctx.emit(shellTrailEvent(`git ${op}`, '(modo demonstração)')); return { tool_message: DEMO_GIT_MESSAGE } }
       if (!res.ok) {
         ctx.emit(shellTrailEvent(`git ${op}`, undefined, res.error))
