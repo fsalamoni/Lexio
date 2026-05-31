@@ -240,6 +240,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_CHAT_CONVO_TOOLS',
     devToggleable: true,
   },
+  {
+    key: 'FF_CHAT_GOOGLE',
+    label: 'Chat: Conectores Google (Drive + Gmail)',
+    description: 'Habilita os conectores Google Drive e Gmail via OAuth client-side (Google Identity Services). Exige um OAuth Client ID configurado. Leituras livres; criar rascunho no Gmail pede aprovação.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_GOOGLE',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────

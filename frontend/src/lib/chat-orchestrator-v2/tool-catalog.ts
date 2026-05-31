@@ -14,6 +14,7 @@ export type ChatV2ToolCategory =
   | 'web'
   | 'pc'
   | 'github'
+  | 'google'
 
 export interface ChatV2ToolMeta {
   name: string
@@ -31,6 +32,7 @@ export const CHAT_V2_TOOL_CATEGORY_LABELS: Record<ChatV2ToolCategory, string> = 
   web: 'Pesquisa & acesso à web',
   pc: 'Ações no PC (sidecar)',
   github: 'Conector GitHub',
+  google: 'Conectores Google (Drive + Gmail)',
 }
 
 /**
@@ -84,6 +86,13 @@ export const CHAT_V2_TOOL_CATALOG: ChatV2ToolMeta[] = [
   { name: 'github_create_issue', label: 'GitHub: criar issue', description: 'Cria uma issue em um repositório GitHub. Pede aprovação quando o portão de ações no PC está ativo.', category: 'github' },
   { name: 'github_open_pr', label: 'GitHub: abrir PR', description: 'Abre um pull request em um repositório GitHub. Pede aprovação quando o portão de ações no PC está ativo.', category: 'github' },
   { name: 'github_comment', label: 'GitHub: comentar', description: 'Comenta em uma issue ou PR do GitHub. Pede aprovação quando o portão de ações no PC está ativo.', category: 'github' },
+
+  // ── Conectores Google (Drive + Gmail) ──
+  { name: 'drive_list_files', label: 'Drive: listar arquivos', description: 'Lista arquivos do Google Drive (somente leitura).', category: 'google' },
+  { name: 'drive_read_file', label: 'Drive: ler arquivo', description: 'Lê o conteúdo textual de um arquivo do Google Drive (Docs/Sheets/Slides exportados como texto). Somente leitura.', category: 'google' },
+  { name: 'gmail_search', label: 'Gmail: buscar', description: 'Busca e-mails no Gmail (sintaxe do Gmail). Somente leitura.', category: 'google' },
+  { name: 'gmail_read', label: 'Gmail: ler', description: 'Lê um e-mail do Gmail por id. Somente leitura.', category: 'google' },
+  { name: 'gmail_create_draft', label: 'Gmail: criar rascunho', description: 'Cria um rascunho de e-mail (não envia). Pede aprovação quando o portão de ações está ativo.', category: 'google' },
 ]
 
 export const CHAT_V2_TOOL_NAMES: string[] = CHAT_V2_TOOL_CATALOG.map(t => t.name)

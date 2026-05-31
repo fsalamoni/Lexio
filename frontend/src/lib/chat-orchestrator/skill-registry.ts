@@ -5,6 +5,7 @@ import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import { buildSuperSkills } from './super-skills'
 import { buildSidecarSkills } from './sidecar-skills'
 import { buildGithubSkills } from './github-skills'
+import { buildGoogleSkills } from './google-skills'
 import { parseAgentOutputPackage, stripAgentPackageArtifacts } from './agent-output'
 import { EFFORT_PRESETS } from './effort-presets'
 
@@ -636,6 +637,8 @@ export function buildSkillRegistry(): Skill[] {
     ...buildSidecarSkills(),
     // GitHub connector skills (behind FF_CHAT_GITHUB)
     ...buildGithubSkills(),
+    // Google connector skills (behind FF_CHAT_GOOGLE)
+    ...buildGoogleSkills(),
   ]
 }
 

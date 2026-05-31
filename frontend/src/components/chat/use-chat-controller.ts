@@ -24,6 +24,7 @@ import {
 } from '../../lib/firestore-service'
 import {
   buildGithubSkills,
+  buildGoogleSkills,
   buildSidecarSkills,
   buildSuperSkills,
   DEFAULT_EFFORT,
@@ -398,7 +399,7 @@ async function runApprovedResumeTool(args: {
     // Resume covers both pipeline super-skills (e.g. generate_image) and the
     // sidecar PC skills (write_file/run_shell/delete_file/rename_file), whose
     // approval gate pauses the turn the same way.
-    const skill = [...buildSuperSkills(), ...buildSidecarSkills(), ...buildGithubSkills()].find(candidate => candidate.name === pendingQuestion.resume_tool)
+    const skill = [...buildSuperSkills(), ...buildSidecarSkills(), ...buildGithubSkills(), ...buildGoogleSkills()].find(candidate => candidate.name === pendingQuestion.resume_tool)
     if (!skill) {
       throw new Error(`Continuação aprovada não encontrada: ${pendingQuestion.resume_tool}`)
     }
