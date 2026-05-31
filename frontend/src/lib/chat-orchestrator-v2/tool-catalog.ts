@@ -13,6 +13,7 @@ export type ChatV2ToolCategory =
   | 'documentos'
   | 'web'
   | 'pc'
+  | 'github'
 
 export interface ChatV2ToolMeta {
   name: string
@@ -29,6 +30,7 @@ export const CHAT_V2_TOOL_CATEGORY_LABELS: Record<ChatV2ToolCategory, string> = 
   documentos: 'Documentos & artefatos',
   web: 'Pesquisa & acesso à web',
   pc: 'Ações no PC (sidecar)',
+  github: 'Conector GitHub',
 }
 
 /**
@@ -75,6 +77,13 @@ export const CHAT_V2_TOOL_CATALOG: ChatV2ToolMeta[] = [
   { name: 'git_commit', label: 'git commit (PC)', description: 'Cria um commit no repositório git da pasta do sidecar. Pede aprovação quando o portão de ações no PC está ativo.', category: 'pc' },
   { name: 'git_pull', label: 'git pull (PC)', description: 'Executa git pull no repositório da pasta do sidecar. Pede aprovação quando o portão de ações no PC está ativo.', category: 'pc' },
   { name: 'git_push', label: 'git push (PC)', description: 'Executa git push no repositório da pasta do sidecar. Pede aprovação quando o portão de ações no PC está ativo.', category: 'pc' },
+
+  // ── Conector GitHub (PAT) ──
+  { name: 'github_list_repos', label: 'GitHub: listar repos', description: 'Lista os repositórios acessíveis pelo token GitHub. Somente leitura.', category: 'github' },
+  { name: 'github_read_file', label: 'GitHub: ler arquivo', description: 'Lê o conteúdo de um arquivo de um repositório GitHub. Somente leitura.', category: 'github' },
+  { name: 'github_create_issue', label: 'GitHub: criar issue', description: 'Cria uma issue em um repositório GitHub. Pede aprovação quando o portão de ações no PC está ativo.', category: 'github' },
+  { name: 'github_open_pr', label: 'GitHub: abrir PR', description: 'Abre um pull request em um repositório GitHub. Pede aprovação quando o portão de ações no PC está ativo.', category: 'github' },
+  { name: 'github_comment', label: 'GitHub: comentar', description: 'Comenta em uma issue ou PR do GitHub. Pede aprovação quando o portão de ações no PC está ativo.', category: 'github' },
 ]
 
 export const CHAT_V2_TOOL_NAMES: string[] = CHAT_V2_TOOL_CATALOG.map(t => t.name)

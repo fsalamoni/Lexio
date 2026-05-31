@@ -99,6 +99,8 @@ export interface MultimodalPolicyConfig {
 export interface UserSettingsData {
   legacy_migrated_at?: string
   api_keys?: Record<string, string>
+  /** GitHub connector config (fine-grained PAT + optional default owner/repo). */
+  github_connection?: { token: string; default_owner?: string; default_repo?: string }
   /** User-scoped runtime overrides for canary/frontend feature flags. */
   feature_flags?: Record<string, boolean>
   /**

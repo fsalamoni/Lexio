@@ -4,6 +4,7 @@ import { dispatchSpecialistAgent } from './dispatch'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../model-config'
 import { buildSuperSkills } from './super-skills'
 import { buildSidecarSkills } from './sidecar-skills'
+import { buildGithubSkills } from './github-skills'
 import { parseAgentOutputPackage, stripAgentPackageArtifacts } from './agent-output'
 import { EFFORT_PRESETS } from './effort-presets'
 
@@ -633,6 +634,8 @@ export function buildSkillRegistry(): Skill[] {
     ...buildSuperSkills(),
     // Desktop sidecar skills
     ...buildSidecarSkills(),
+    // GitHub connector skills (behind FF_CHAT_GITHUB)
+    ...buildGithubSkills(),
   ]
 }
 
