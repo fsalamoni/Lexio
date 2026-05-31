@@ -44,6 +44,7 @@ import DocumentV4ToolsConfigCard from '../components/admin/DocumentV4ToolsConfig
 import ChatOrchestratorV2ConfigCard from '../components/admin/ChatOrchestratorV2ConfigCard'
 import ChatOrchestratorV2ToolsConfigCard from '../components/admin/ChatOrchestratorV2ToolsConfigCard'
 import SidecarConnectionCard from '../components/admin/SidecarConnectionCard'
+import SidecarAuditAllCard from '../components/admin/SidecarAuditAllCard'
 import GithubConnectorCard from '../components/admin/GithubConnectorCard'
 import FeatureFlagsCard from '../components/admin/FeatureFlagsCard'
 import { isEnabled as isFeatureEnabled } from '../lib/feature-flags'
@@ -1113,6 +1114,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <SidecarConnectionCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Aggregated PC-action audit — behind FF_CHAT_PC_APPROVALS */}
+      {IS_FIREBASE && isFeatureEnabled('FF_CHAT_PC_APPROVALS') && (
+        <AdminCollapsibleSection
+          id="section_sidecar_audit_all"
+          title="Auditoria de ações no PC — todas as conversas"
+          icon={Brain}
+          iconColor="text-emerald-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <SidecarAuditAllCard />
         </AdminCollapsibleSection>
       )}
 
