@@ -1,4 +1,4 @@
-import { MessagesSquare, Search, Square, WifiOff } from 'lucide-react'
+import { Download, MessagesSquare, Search, Square, WifiOff } from 'lucide-react'
 import clsx from 'clsx'
 import type { ChatConversationData, ChatEffortLevel } from '../../lib/firestore-types'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../../lib/model-config'
@@ -14,6 +14,8 @@ interface ChatHeaderProps {
   onCancel: () => void
   onToggleSearch?: () => void
   showSearch?: boolean
+  /** Export the current conversation transcript (Markdown). */
+  onExport?: () => void
 }
 
 export default function ChatHeader({
@@ -24,6 +26,7 @@ export default function ChatHeader({
   onCancel,
   onToggleSearch,
   showSearch,
+  onExport,
 }: ChatHeaderProps) {
   return (
     <header className="flex items-center justify-between gap-3 border-b border-[var(--v2-border)] bg-white/80 px-4 py-3">
@@ -55,6 +58,17 @@ export default function ChatHeader({
           >
             <Search className="h-3 w-3" />
             Buscar
+          </button>
+        )}
+        {onExport && (
+          <button
+            type="button"
+            onClick={onExport}
+            className="inline-flex items-center gap-1 rounded-lg border border-[var(--v2-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--v2-ink-strong)] transition hover:bg-[var(--v2-border)]"
+            title="Exportar a conversa em Markdown"
+          >
+            <Download className="h-3 w-3" />
+            Exportar
           </button>
         )}
         {isEnabled('FF_CHAT_PC_APPROVALS') ? <SidecarStatusBadge /> : <SidecarStatusPlaceholder />}

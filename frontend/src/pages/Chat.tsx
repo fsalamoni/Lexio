@@ -10,6 +10,7 @@ import SidecarAuditPanel from '../components/chat/SidecarAuditPanel'
 import { useChatController } from '../components/chat/use-chat-controller'
 import { isMockRuntimeActive } from '../lib/chat-orchestrator'
 import { isEnabled } from '../lib/feature-flags'
+import { exportChatConversation } from '../lib/chat-conversation-export'
 import type { HybridResultItem } from '../lib/search-client'
 
 /**
@@ -75,6 +76,11 @@ export default function Chat() {
             onCancel={cancel}
             onToggleSearch={() => setShowSearch(s => !s)}
             showSearch={showSearch}
+            onExport={
+              activeId && isEnabled('FF_CHAT_CONVO_TOOLS') && state.turns.length > 0
+                ? () => exportChatConversation(state.conversation, state.turns, 'md')
+                : undefined
+            }
           />
           {activeId && isEnabled('FF_CHAT_PC_APPROVALS') && (
             <SidecarAuditPanel conversationId={activeId} />
