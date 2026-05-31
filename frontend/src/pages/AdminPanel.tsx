@@ -46,6 +46,7 @@ import ChatOrchestratorV2ToolsConfigCard from '../components/admin/ChatOrchestra
 import SidecarConnectionCard from '../components/admin/SidecarConnectionCard'
 import SidecarAuditAllCard from '../components/admin/SidecarAuditAllCard'
 import GithubConnectorCard from '../components/admin/GithubConnectorCard'
+import GoogleConnectorCard from '../components/admin/GoogleConnectorCard'
 import FeatureFlagsCard from '../components/admin/FeatureFlagsCard'
 import { isEnabled as isFeatureEnabled } from '../lib/feature-flags'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
@@ -1142,6 +1143,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <GithubConnectorCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Google connector (Drive + Gmail) — behind FF_CHAT_GOOGLE */}
+      {IS_FIREBASE && isFeatureEnabled('FF_CHAT_GOOGLE') && (
+        <AdminCollapsibleSection
+          id="section_google_connector"
+          title="Conector Google — Drive e Gmail"
+          icon={Brain}
+          iconColor="text-sky-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <GoogleConnectorCard />
         </AdminCollapsibleSection>
       )}
 

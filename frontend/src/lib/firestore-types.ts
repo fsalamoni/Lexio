@@ -101,6 +101,8 @@ export interface UserSettingsData {
   api_keys?: Record<string, string>
   /** GitHub connector config (fine-grained PAT + optional default owner/repo). */
   github_connection?: { token: string; default_owner?: string; default_repo?: string }
+  /** Google connector config (public OAuth Client ID; the access token is never persisted). */
+  google_connection?: { client_id: string }
   /** User-scoped runtime overrides for canary/frontend feature flags. */
   feature_flags?: Record<string, boolean>
   /**

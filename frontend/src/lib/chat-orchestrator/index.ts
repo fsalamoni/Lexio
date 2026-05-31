@@ -12,6 +12,7 @@ export { buildSuperSkills, PIPELINE_DOCUMENT_TYPES, PIPELINE_DOCUMENT_LABELS } f
 export type { PipelineDocumentType } from './super-skills'
 export { buildSidecarSkills, checkSidecarStatus } from './sidecar-skills'
 export { buildGithubSkills } from './github-skills'
+export { buildGoogleSkills } from './google-skills'
 export type {
   ChatEffortLevel,
   ChatTrailEvent,
