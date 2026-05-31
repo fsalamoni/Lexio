@@ -53,6 +53,7 @@ export default function SidecarAuditPanel({ conversationId }: SidecarAuditPanelP
         <button
           type="button"
           onClick={() => setOpen(o => !o)}
+          aria-expanded={open}
           className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--v2-ink-faint)] hover:text-[var(--v2-ink-strong)]"
         >
           {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}

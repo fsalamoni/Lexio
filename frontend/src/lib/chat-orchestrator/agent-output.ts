@@ -103,9 +103,16 @@ export function parseAgentOutputPackage(args: ParseAgentOutputArgs): ParsedAgent
     MAX_RESULT_MARKDOWN_CHARS,
   )
   const thought = normalizeThought(parsed?.thought, args.agentKey)
-  const artifacts = Array.isArray(parsed?.artifacts)
-    ? parsed.artifacts.map((artifact, index) => normalizeArtifactRef(artifact, args, index)).filter(Boolean) as ChatArtifactRef[]
-    : []
+  // Collect artifacts from EVERY fenced package block (an agent may emit more
+  // than one) so none are silently dropped; fall back to the primary payload's
+  // artifacts when there are no fenced package blocks (bare/whole-object case).
+  const fencedArtifacts = collectPackageArtifacts(args.rawOutput)
+  const rawArtifactList = fencedArtifacts.length
+    ? fencedArtifacts
+    : (Array.isArray(parsed?.artifacts) ? parsed.artifacts : [])
+  const artifacts = ensureUniqueArtifactIds(
+    rawArtifactList.map((artifact, index) => normalizeArtifactRef(artifact, args, index)).filter(Boolean) as ChatArtifactRef[],
+  )
 
   return {
     displayMarkdown: resultMarkdown,
@@ -121,6 +128,36 @@ export function parseAgentOutputPackage(args: ParseAgentOutputArgs): ParsedAgent
       completed_at: timestamp,
     },
   }
+}
+
+/** Collect the `artifacts` arrays from every fenced block that parses as a package. */
+function collectPackageArtifacts(rawOutput: string): unknown[] {
+  const collected: unknown[] = []
+  for (const block of rawOutput.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    const payload = parsePackageJson(block[1])
+    if (payload && Array.isArray(payload.artifacts)) collected.push(...payload.artifacts)
+  }
+  return collected
+}
+
+/**
+ * Guarantee unique `artifact_id`s within a package. Two artifacts sharing a
+ * `logical_document_id` + `version` would otherwise collide (same derived id)
+ * and overwrite each other downstream; on collision we append `-2`, `-3`, …
+ */
+function ensureUniqueArtifactIds(artifacts: ChatArtifactRef[]): ChatArtifactRef[] {
+  const seen = new Set<string>()
+  return artifacts.map(artifact => {
+    if (!seen.has(artifact.artifact_id)) {
+      seen.add(artifact.artifact_id)
+      return artifact
+    }
+    let suffix = 2
+    while (seen.has(`${artifact.artifact_id}-${suffix}`)) suffix += 1
+    const uniqueId = `${artifact.artifact_id}-${suffix}`
+    seen.add(uniqueId)
+    return { ...artifact, artifact_id: uniqueId }
+  })
 }
 
 function extractPackagePayload(rawOutput: string): Record<string, unknown> | null {

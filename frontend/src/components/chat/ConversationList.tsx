@@ -177,6 +177,7 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
             type="search"
             value={query}
             onChange={e => setQuery(e.target.value)}
+            aria-label="Buscar conversas"
             placeholder="Buscar conversas…"
             className="w-full rounded-lg border border-[var(--v2-border)] bg-white py-1.5 pl-7 pr-2 text-xs"
           />
@@ -260,6 +261,7 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
                           onClick={() => handleTogglePin(item.id!, !pinned)}
                           className="rounded p-1 text-[var(--v2-ink-faint)] hover:bg-white hover:text-[var(--v2-ink-strong)]"
                           title={pinned ? 'Desafixar' : 'Fixar no topo'}
+                          aria-label={pinned ? `Desafixar ${item.title}` : `Fixar ${item.title} no topo`}
                         >
                           {pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
                         </button>
@@ -269,6 +271,7 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
                         onClick={() => startRename(item.id!, item.title)}
                         className="rounded p-1 text-[var(--v2-ink-faint)] hover:bg-white hover:text-[var(--v2-ink-strong)]"
                         title="Renomear"
+                        aria-label={`Renomear ${item.title}`}
                       >
                         <Pencil className="h-3 w-3" />
                       </button>
@@ -277,6 +280,7 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
                         onClick={() => handleDelete(item.id!)}
                         className="rounded p-1 text-[var(--v2-ink-faint)] hover:bg-rose-50 hover:text-rose-600"
                         title="Arquivar"
+                        aria-label={`Arquivar ${item.title}`}
                       >
                         <Archive className="h-3 w-3" />
                       </button>
