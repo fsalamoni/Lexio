@@ -44,6 +44,15 @@ export interface LLMCallOptions {
    * and `onToken` is invoked exactly once with the final content.
    */
   onToken?: (delta: string, total: string) => void
+  /**
+   * Opt-in Anthropic prompt caching: when true and the resolved model is an
+   * `anthropic/*` model, the first system message is sent with a
+   * `cache_control: {type:'ephemeral'}` breakpoint so repeated calls in a turn
+   * hit the provider cache. No-op for every other model/provider. Only the chat
+   * orchestrator sets this (gated by FF_CHAT_ENGINE_PLUS), so no other pipeline
+   * is affected.
+   */
+  cacheSystemPrompt?: boolean
 }
 
 function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
@@ -352,6 +361,12 @@ export interface LLMOperationalMeta {
 export type ChatMessageTextPart = {
   type: 'text'
   text: string
+  /**
+   * Anthropic prompt-caching breakpoint (forwarded by OpenRouter). Only set by
+   * the opt-in `cacheSystemPrompt` path for `anthropic/*` models; ignored by
+   * every other provider/dialect.
+   */
+  cache_control?: { type: 'ephemeral' }
 }
 
 export type ChatMessageImagePart = {
@@ -380,6 +395,26 @@ function extractTextFromChatMessageContent(content: ChatMessageContent): string 
     .map((part) => (part.type === 'text' ? part.text : ''))
     .filter(Boolean)
     .join('')
+}
+
+/**
+ * Attach an Anthropic prompt-cache breakpoint to the first system message, only
+ * for `anthropic/*` models (where OpenRouter forwards `cache_control`). Returns
+ * the original array unchanged for any other model, so this is a safe no-op for
+ * every non-Anthropic call. Pure function — exported for unit testing.
+ */
+export function applySystemPromptCache(messages: ChatMessage[], model: string): ChatMessage[] {
+  if (!/^anthropic\//i.test(model)) return messages
+  let applied = false
+  const mapped = messages.map((message) => {
+    if (applied || message.role !== 'system') return message
+    const text = extractTextFromChatMessageContent(message.content)
+    if (!text) return message
+    applied = true
+    return { role: 'system' as const, content: [{ type: 'text' as const, text, cache_control: { type: 'ephemeral' as const } }] }
+  })
+  // Return the original reference untouched when nothing was cached.
+  return applied ? mapped : messages
 }
 
 function parseImageDataUrl(dataUrl: string): { mediaType: string; data: string } | null {
@@ -902,8 +937,12 @@ async function executeChatCompletion(
   const t0 = performance.now()
   const resolved = await resolveCallContext(legacyApiKey, model)
 
+  // Opt-in Anthropic prompt caching — no-op for non-Anthropic models. Applied
+  // per actual model so fallback candidates are handled correctly.
+  const effectiveMessages = options?.cacheSystemPrompt ? applySystemPromptCache(messages, model) : messages
+
   if (options?.onToken && dialectSupportsOpenAIStreaming(resolved.provider.dialect)) {
-    return executeChatCompletionStreaming(resolved, messages, model, maxTokens, temperature, options)
+    return executeChatCompletionStreaming(resolved, effectiveMessages, model, maxTokens, temperature, options)
   }
 
   for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_RESPONSE_RETRIES; emptyAttempt++) {
@@ -924,7 +963,7 @@ async function executeChatCompletion(
       parseResponse,
     } = await fetchProviderResponse(
       resolved,
-      messages,
+      effectiveMessages,
       model,
       maxTokens,
       temperature,

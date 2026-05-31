@@ -45,6 +45,7 @@ import ChatOrchestratorV2ConfigCard from '../components/admin/ChatOrchestratorV2
 import ChatOrchestratorV2ToolsConfigCard from '../components/admin/ChatOrchestratorV2ToolsConfigCard'
 import SidecarConnectionCard from '../components/admin/SidecarConnectionCard'
 import GithubConnectorCard from '../components/admin/GithubConnectorCard'
+import FeatureFlagsCard from '../components/admin/FeatureFlagsCard'
 import { isEnabled as isFeatureEnabled } from '../lib/feature-flags'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
 import MultimodalPolicyCard from '../components/admin/MultimodalPolicyCard'
@@ -1084,6 +1085,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <ChatOrchestratorV2ToolsConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Chat beta feature flags — per-user rollout toggles */}
+      {IS_FIREBASE && (
+        <AdminCollapsibleSection
+          id="section_chat_feature_flags"
+          title="Recursos beta do Chat — ligar/desligar por conta"
+          icon={Brain}
+          iconColor="text-violet-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <FeatureFlagsCard />
         </AdminCollapsibleSection>
       )}
 

@@ -491,6 +491,8 @@ docs/              → Documentação técnica
 
 A página `/chat` hospeda uma conversa orquestrada com tools/super-skills e (no PR4) ações no PC via sidecar Node `@lexio/desktop`. PR1 entregou registro de agentes e persistência (`/users/{uid}/chat_conversations/{id}` + subcoleção `turns`); PR2 ligou o loop runtime e o `call_agent` para um subconjunto de especialistas; PR3 expandiu o quadro para 11 agentes (incluindo `chat_argument_builder` e `chat_ethics_auditor` inspirados no SalomoneIA), refinou os prompts dos especialistas e abriu o `call_agent` para todos os especialistas (exceto orquestrador e crítico, que têm fluxos próprios). PR4 entrega o sidecar `@lexio/desktop` para ações reais de filesystem/shell.
 
+> **Ondas pós-PR4 (atrás de feature flags, default OFF):** aprovação real + auditoria das ações no PC e ops `delete`/`rename`/`move` (`FF_CHAT_PC_APPROVALS`); skills git no sidecar (`FF_CHAT_PC_GIT`); motor — teto de custo USD, crítico por domínio, memória rolante, resiliência de parsing e prompt caching Anthropic (`FF_CHAT_ENGINE_PLUS`); exportar/buscar/fixar conversas (`FF_CHAT_CONVO_TOOLS`); conector GitHub via PAT, sem backend (`FF_CHAT_GITHUB`). Liga-se por conta em `/settings` → "Recursos beta do Chat" ou por `VITE_FF_*` no build. Ver `docs/guides/chat-pc-github-and-flags.md`.
+
 | # | Key | Label | Categoria | Tier |
 |---|-----|-------|-----------|------|
 | 1 | `chat_orchestrator` | Orquestrador | reasoning | premium |
