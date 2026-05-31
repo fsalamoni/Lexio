@@ -12,10 +12,27 @@ import type {
   ChatApprovalRequestData,
   ChatContextSourceRef,
   ChatPendingQuestionData,
+  ChatSidecarApprovalPolicy,
+  ChatSidecarAuditEntryData,
   ChatTrailEvent,
   ChatTurnAttachment,
   ChatTurnStatus,
 } from '../firestore-types'
+
+/** Resolved sidecar (PC) connection used by filesystem/shell skills. */
+export interface SidecarRuntimeConfig {
+  token: string
+  host: string
+  port: number
+  enabled: boolean
+  approval_policy?: ChatSidecarApprovalPolicy
+}
+
+/** Audit entry hook payload — everything except the keys the repository fills. */
+export type ChatSidecarAuditEntryInput = Omit<
+  ChatSidecarAuditEntryData,
+  'id' | 'conversation_id' | 'created_at'
+> & { created_at?: string }
 import type { UsageExecutionRecord, UsageFunctionKey } from '../cost-analytics'
 
 /** Re-export for consumers so they only need a single import path. */
@@ -114,7 +131,7 @@ export interface SkillContext {
    * Resolved sidecar (PC) connection used by filesystem/shell skills. When
    * absent, those skills fall back to demo mode. Loaded once per turn.
    */
-  sidecar?: { token: string; host: string; port: number; enabled: boolean }
+  sidecar?: SidecarRuntimeConfig
   /** Streaming callback: fires for each token delta produced by any specialist agent. */
   onAgentToken?: (agentKey: string, delta: string, total: string) => void
   /** Optional durable persistence hook; awaited before the runtime advances to the next iteration. */
@@ -123,6 +140,12 @@ export interface SkillContext {
   createApprovalRequest?: (
     data: Omit<ChatApprovalRequestData, 'id' | 'conversation_id' | 'created_at' | 'updated_at' | 'status'> & { status?: ChatApprovalRequestData['status'] }
   ) => Promise<string>
+  /**
+   * Optional audit hook — sidecar/PC skills append one entry per proposed,
+   * executed or failed filesystem/shell/git action. Best-effort: failures must
+   * never block the action itself.
+   */
+  appendAuditEntry?: (entry: ChatSidecarAuditEntryInput) => Promise<void>
 }
 
 /**
@@ -214,10 +237,12 @@ export interface RunChatTurnInput {
   persistWorkPackage?: (workPackage: ChatAgentWorkPackage) => Promise<ChatAgentWorkPackage>
   /** Optional approval persistence hook for costly or side-effectful actions. */
   createApprovalRequest?: SkillContext['createApprovalRequest']
+  /** Optional audit hook for sidecar/PC actions. */
+  appendAuditEntry?: SkillContext['appendAuditEntry']
   /** Orchestration profile (defaults to v1 when omitted). Set by `runChatTurnV2`. */
   profile?: ChatOrchestratorProfile
   /** Resolved sidecar (PC) connection for filesystem/shell skills. */
-  sidecar?: { token: string; host: string; port: number; enabled: boolean }
+  sidecar?: SidecarRuntimeConfig
 }
 
 /**

@@ -2,7 +2,9 @@ import { MessagesSquare, Search, Square, WifiOff } from 'lucide-react'
 import clsx from 'clsx'
 import type { ChatConversationData, ChatEffortLevel } from '../../lib/firestore-types'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../../lib/model-config'
+import { isEnabled } from '../../lib/feature-flags'
 import EffortPicker from './EffortPicker'
+import SidecarStatusBadge from './SidecarStatusBadge'
 
 interface ChatHeaderProps {
   conversation: ChatConversationData | null
@@ -55,7 +57,7 @@ export default function ChatHeader({
             Buscar
           </button>
         )}
-        <SidecarStatusPlaceholder />
+        {isEnabled('FF_CHAT_PC_APPROVALS') ? <SidecarStatusBadge /> : <SidecarStatusPlaceholder />}
         <EffortPicker value={effort} onChange={onChangeEffort} disabled={busy} />
         {busy && (
           <button

@@ -115,3 +115,69 @@ test('handler: destructive shell command blocked even with execute', async () =>
   assert.equal(res.ok, false)
   assert.equal(res.code, 'DESTRUCTIVE')
 })
+
+test('handler: delete removes a file inside the root (with delete permission)', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'lexio-sidecar-'))
+  try {
+    const handler = createHandler({ root: tmp, permissions: ['read', 'write', 'delete'], version: '0.1.0' })
+    await handler.handle({ id: 'w', type: 'fs', op: 'write', payload: { path: 'tmp/x.txt', content: 'bye' } })
+
+    const del = await handler.handle({ id: 'd', type: 'fs', op: 'delete', payload: { path: 'tmp/x.txt' } })
+    assert.equal(del.ok, true)
+    assert.equal(del.result.deleted, true)
+
+    const read = await handler.handle({ id: 'r', type: 'fs', op: 'read', payload: { path: 'tmp/x.txt' } })
+    assert.equal(read.ok, false) // file is gone
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true })
+  }
+})
+
+test('handler: delete denied without delete permission', async () => {
+  const handler = createHandler({ root: ROOT, permissions: ['read', 'write'], version: '0.1.0' })
+  const res = await handler.handle({ id: 'd', type: 'fs', op: 'delete', payload: { path: 'x.txt' } })
+  assert.equal(res.ok, false)
+  assert.equal(res.code, 'PERMISSION_DENIED')
+})
+
+test('handler: delete refuses to remove the workspace root', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'lexio-sidecar-'))
+  try {
+    const handler = createHandler({ root: tmp, permissions: ['delete'], version: '0.1.0' })
+    const res = await handler.handle({ id: 'd', type: 'fs', op: 'delete', payload: { path: '.' } })
+    assert.equal(res.ok, false)
+    assert.equal(res.code, 'ROOT_PROTECTED')
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true })
+  }
+})
+
+test('handler: rename moves a file and validates both ends inside the root', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'lexio-sidecar-'))
+  try {
+    const handler = createHandler({ root: tmp, permissions: ['read', 'write', 'rename'], version: '0.1.0' })
+    await handler.handle({ id: 'w', type: 'fs', op: 'write', payload: { path: 'a.txt', content: 'data' } })
+
+    const mv = await handler.handle({ id: 'mv', type: 'fs', op: 'rename', payload: { from: 'a.txt', to: 'sub/b.txt' } })
+    assert.equal(mv.ok, true)
+    assert.equal(mv.result.moved, true)
+
+    const read = await handler.handle({ id: 'r', type: 'fs', op: 'read', payload: { path: 'sub/b.txt' } })
+    assert.equal(read.ok, true)
+    assert.equal(read.result, 'data')
+
+    // destination escaping the root is refused
+    const escape = await handler.handle({ id: 'e', type: 'fs', op: 'rename', payload: { from: 'sub/b.txt', to: '../escaped.txt' } })
+    assert.equal(escape.ok, false)
+    assert.equal(escape.code, 'PATH_OUTSIDE_ROOT')
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true })
+  }
+})
+
+test('handler: rename denied without rename permission', async () => {
+  const handler = createHandler({ root: ROOT, permissions: ['read', 'write'], version: '0.1.0' })
+  const res = await handler.handle({ id: 'mv', type: 'fs', op: 'rename', payload: { from: 'a.txt', to: 'b.txt' } })
+  assert.equal(res.ok, false)
+  assert.equal(res.code, 'PERMISSION_DENIED')
+})

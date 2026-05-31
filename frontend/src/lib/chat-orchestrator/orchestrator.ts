@@ -94,6 +94,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     onAgentToken: input.onAgentToken,
     persistWorkPackage: input.persistWorkPackage,
     createApprovalRequest: input.createApprovalRequest,
+    appendAuditEntry: input.appendAuditEntry,
     mock: Boolean(input.mock),
     profile,
     sidecar: input.sidecar,

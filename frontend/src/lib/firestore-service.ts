@@ -628,6 +628,7 @@ export const updateChatSidecarCommand = chatRepository.updateChatSidecarCommand
 export const createChatApprovalRequest = chatRepository.createChatApprovalRequest
 export const updateChatApprovalRequest = chatRepository.updateChatApprovalRequest
 export const appendChatSidecarAuditEntry = chatRepository.appendChatSidecarAuditEntry
+export const listChatSidecarAuditEntries = chatRepository.listChatSidecarAuditEntries
 
 // ── Password change via Firebase Auth ────────────────────────────────────────
 

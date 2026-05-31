@@ -9,6 +9,7 @@ import type {
   ChatEffortLevel,
 } from '../../lib/firestore-types'
 import {
+  appendChatSidecarAuditEntry,
   appendChatTurn,
   createChatApprovalRequest,
   ensureChatConversation,
@@ -22,6 +23,7 @@ import {
   updateChatConversationPreview,
 } from '../../lib/firestore-service'
 import {
+  buildSidecarSkills,
   buildSuperSkills,
   DEFAULT_EFFORT,
   EFFORT_PRESETS,
@@ -306,6 +308,15 @@ async function persistResolvedApprovalReply(args: {
   dispatch({ type: 'COMMIT_TURN', turn, status: 'done' })
 }
 
+/**
+ * Build the best-effort audit hook for sidecar/PC actions. Returns undefined in
+ * demo mode / when unauthenticated so skills simply skip auditing.
+ */
+function buildSidecarAuditHook(userId: string | null, conversationId: string): SkillContext['appendAuditEntry'] {
+  if (!IS_FIREBASE || !userId) return undefined
+  return entry => appendChatSidecarAuditEntry(userId, conversationId, entry).then(() => undefined)
+}
+
 export async function resolveApprovalResumeRuntime(args: {
   userId: string | null
   mock: boolean
@@ -382,11 +393,15 @@ async function runApprovedResumeTool(args: {
   }
 
   try {
-    const skill = buildSuperSkills().find(candidate => candidate.name === pendingQuestion.resume_tool)
+    // Resume covers both pipeline super-skills (e.g. generate_image) and the
+    // sidecar PC skills (write_file/run_shell/delete_file/rename_file), whose
+    // approval gate pauses the turn the same way.
+    const skill = [...buildSuperSkills(), ...buildSidecarSkills()].find(candidate => candidate.name === pendingQuestion.resume_tool)
     if (!skill) {
       throw new Error(`Continuação aprovada não encontrada: ${pendingQuestion.resume_tool}`)
     }
     const { models: resumeModels, apiKey: resumeApiKey } = await resolveApprovalResumeRuntime({ userId, mock })
+    const sidecarConfig = mock ? getDefaultSidecarConnectionConfig() : await loadSidecarConnectionConfig(userId ?? undefined)
     const controller = new AbortController()
     const ctx: SkillContext = {
       uid: userId ?? 'demo',
@@ -400,12 +415,14 @@ async function runApprovedResumeTool(args: {
       models: resumeModels,
       apiKey: resumeApiKey,
       mock,
+      sidecar: sidecarConfig,
       persistWorkPackage: IS_FIREBASE && userId
         ? workPackage => persistChatAgentWorkPackage(userId, conversationId, workPackage)
         : undefined,
       createApprovalRequest: IS_FIREBASE && userId
         ? data => createChatApprovalRequest(userId, conversationId, data)
         : undefined,
+      appendAuditEntry: buildSidecarAuditHook(userId, conversationId),
     }
     const result = await skill.run(pendingQuestion.resume_args ?? {}, ctx)
     const completedAt = new Date().toISOString()
@@ -887,6 +904,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         createApprovalRequest: IS_FIREBASE && userId
           ? data => createChatApprovalRequest(userId, conversationId, data)
           : undefined,
+        appendAuditEntry: buildSidecarAuditHook(userId, conversationId),
       })
 
       if (scheduled) {

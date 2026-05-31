@@ -15,13 +15,128 @@
  *    em modo simulado, retornando resultados de demonstração.
  */
 
-import type { ChatTrailEvent } from '../firestore-types'
-import type { Skill, SkillContext, SkillResult } from './types'
+import type { ChatSidecarPermission, ChatTrailEvent } from '../firestore-types'
+import type { ChatSidecarAuditEntryInput, Skill, SkillContext, SkillResult } from './types'
 import { DEFAULT_SIDECAR_HOST, DEFAULT_SIDECAR_PORT } from './sidecar-config'
+import { isEnabled } from '../feature-flags'
 
 // ── Configuração do Sidecar ───────────────────────────────────────────────────
 
 const SIDECAR_WS_TIMEOUT_MS = 5000
+
+// ── Approval gate + audit (Wave 1: PC action safety) ──────────────────────────
+
+/**
+ * Mutating operations that require explicit user approval before running when
+ * `FF_CHAT_PC_APPROVALS` is on. Reads (`read`/`list`/`git_status`/`git_diff`)
+ * are never gated.
+ */
+type GatedSidecarOp = 'write' | 'delete' | 'rename' | 'move' | 'shell' | 'git_commit' | 'git_push' | 'git_pull'
+
+/** True when the approval gate is active (the user opted in via the flag). */
+function approvalGateActive(): boolean {
+  return isEnabled('FF_CHAT_PC_APPROVALS')
+}
+
+/** Append an audit entry, swallowing errors — auditing must never block an action. */
+async function auditSafe(ctx: SkillContext, entry: ChatSidecarAuditEntryInput): Promise<void> {
+  if (!ctx.appendAuditEntry) return
+  try {
+    await ctx.appendAuditEntry(entry)
+  } catch {
+    // best-effort — never fail the action because the audit write failed.
+  }
+}
+
+/** Clip free-text for the compact audit `message` field. */
+function clipAudit(text: string, max = 200): string {
+  const value = String(text ?? '')
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`
+}
+
+/** Small non-cryptographic content fingerprint for the audit trail (djb2). */
+function shortHash(text: string): string {
+  let hash = 5381
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) + hash + text.charCodeAt(i)) >>> 0
+  }
+  return `djb2:${hash.toString(16)}`
+}
+
+function riskForOp(op: GatedSidecarOp): 'low' | 'medium' | 'high' {
+  if (op === 'shell' || op === 'delete' || op === 'git_push') return 'high'
+  return 'medium'
+}
+
+/**
+ * Pause the turn to ask the user to approve a mutating PC action. Mirrors the
+ * `request_user_approval` skill so the existing controller resume path
+ * (`runApprovedResumeTool`) picks it up: it persists an approval request, emits
+ * the `approval_requested` trail event, records a `proposed` audit entry, and
+ * returns `awaiting_user` with `resume_tool`/`resume_args` (carrying
+ * `approved: true`) so the same skill re-runs and executes after approval.
+ */
+async function requestSidecarApproval(
+  ctx: SkillContext,
+  opts: {
+    op: GatedSidecarOp
+    title: string
+    summary: string
+    permissions: ChatSidecarPermission[]
+    resourcePath?: string
+    resumeTool: string
+    resumeArgs: Record<string, unknown>
+  },
+): Promise<SkillResult> {
+  const risk = riskForOp(opts.op)
+  let approvalId = `local-${Date.now()}`
+  if (ctx.createApprovalRequest) {
+    try {
+      approvalId = await ctx.createApprovalRequest({
+        command_ids: [],
+        title: opts.title,
+        summary: opts.summary,
+        risk_level: risk,
+        requested_permissions: opts.permissions,
+      })
+    } catch {
+      // keep the local id; the approval still surfaces in the UI.
+    }
+  }
+  ctx.emit({
+    type: 'approval_requested',
+    approval_id: approvalId,
+    title: opts.title,
+    summary: opts.summary,
+    risk_level: risk,
+    ts: nowIso(),
+  } as ChatTrailEvent)
+  await auditSafe(ctx, {
+    operation: opts.op,
+    actor: 'orchestrator',
+    status: 'proposed',
+    resource_path: opts.resourcePath,
+    approval_id: approvalId,
+    message: opts.title,
+  })
+  const question = [
+    opts.title,
+    '',
+    opts.summary,
+    '',
+    'Responda "aprovar" para autorizar, "rejeitar" para cancelar ou "ajustar" para mudar antes de executar.',
+  ].join('\n')
+  return {
+    tool_message: `Aguardando aprovação do usuário (${approvalId}): ${opts.title}`,
+    awaiting_user: {
+      question,
+      options: ['aprovar', 'rejeitar', 'ajustar'],
+      approval_id: approvalId,
+      resume_tool: opts.resumeTool,
+      resume_args: { ...opts.resumeArgs, approved: true, approval_id: approvalId },
+    },
+  }
+}
 
 /** Build the ws URL (+ token) from the per-turn sidecar config on the context. */
 function resolveSidecarWsUrl(ctx: SkillContext): string | null {
@@ -318,13 +433,18 @@ const listDirSkill: Skill<ListDirArgs> = {
 interface WriteFileArgs {
   path?: string
   content?: string
+  /** Set to true by the approval-resume path so the write actually runs. */
+  approved?: boolean
+  /** Approval id threaded from the proposal, for the executed audit entry. */
+  approval_id?: string
 }
 
 const writeFileSkill: Skill<WriteFileArgs> = {
   name: 'write_file',
   description:
     'Escreve conteúdo em um arquivo no sistema local. ' +
-    'Use quando o usuário pedir para salvar um documento, rascunho ou resultado.',
+    'Use quando o usuário pedir para salvar um documento, rascunho ou resultado. ' +
+    'Quando a aprovação de ações no PC está ativa, esta ação pede confirmação do usuário antes de executar.',
   argsHint: {
     path: 'Caminho absoluto do arquivo (ex.: "C:\\Users\\...\\peticao.docx")',
     content: 'Conteúdo a ser escrito no arquivo',
@@ -334,6 +454,18 @@ const writeFileSkill: Skill<WriteFileArgs> = {
     const content = String(args.content ?? '').trim()
     if (!path) return { tool_message: 'Erro: "path" é obrigatório.' }
     if (!content) return { tool_message: 'Erro: "content" é obrigatório.' }
+
+    if (approvalGateActive() && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'write',
+        title: `Escrever arquivo: ${path}`,
+        summary: `O assistente quer gravar ${formatBytes(content.length)} em "${path}". Confirme para autorizar a escrita no seu computador.`,
+        permissions: ['write'],
+        resourcePath: path,
+        resumeTool: 'write_file',
+        resumeArgs: { path, content },
+      })
+    }
 
     const wsUrl = resolveSidecarWsUrl(ctx)
     const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
@@ -352,10 +484,19 @@ const writeFileSkill: Skill<WriteFileArgs> = {
       )
       if (!response || !response.ok) {
         ctx.emit(fsTrailEvent('write', path, undefined, response?.error))
+        await auditSafe(ctx, {
+          operation: 'write', actor: 'sidecar', status: 'failed', resource_path: path,
+          approval_id: args.approval_id, message: response?.error ?? 'Sidecar indisponível',
+        })
         return { tool_message: `Falha ao escrever em "${path}": ${response?.error ?? 'Sidecar indisponível'}` }
       }
       const size = content.length
       ctx.emit(fsTrailEvent('write', path, `${formatBytes(size)} escritos`))
+      await auditSafe(ctx, {
+        operation: 'write', actor: 'sidecar', status: 'executed', resource_path: path,
+        approval_id: args.approval_id, content_hash_after: shortHash(content),
+        message: `${formatBytes(size)} escritos`,
+      })
       return {
         tool_message: `✅ Arquivo salvo com sucesso:\n- Caminho: ${path}\n- Tamanho: ${formatBytes(size)}`,
       }
@@ -378,6 +519,10 @@ interface ShellArgs {
   cmd?: string
   cwd?: string
   timeout_sec?: number
+  /** Set to true by the approval-resume path so the command actually runs. */
+  approved?: boolean
+  /** Approval id threaded from the proposal, for the executed audit entry. */
+  approval_id?: string
 }
 
 const shellSkill: Skill<ShellArgs> = {
@@ -417,10 +562,23 @@ const shellSkill: Skill<ShellArgs> = {
           ts: nowIso(),
         } as ChatTrailEvent
         ctx.emit(blockedEvent)
+        await auditSafe(ctx, { operation: 'shell', actor: 'sidecar', status: 'rejected', resource_path: cwd, message: `Bloqueado por segurança: ${cmd}` })
         return {
           tool_message: `🚫 Comando bloqueado por segurança: "${cmd}" parece ser destrutivo. Esta operação não é permitida pelo sidecar.`,
         }
       }
+    }
+
+    if (approvalGateActive() && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'shell',
+        title: `Executar comando: ${cmd}`,
+        summary: `O assistente quer executar \`${cmd}\`${cwd ? ` em "${cwd}"` : ''} no seu computador (timeout ${timeoutSec}s). Confirme para autorizar a execução.`,
+        permissions: ['execute'],
+        resourcePath: cwd,
+        resumeTool: 'run_shell',
+        resumeArgs: { cmd, ...(cwd ? { cwd } : {}), timeout_sec: timeoutSec },
+      })
     }
 
     const wsUrl = resolveSidecarWsUrl(ctx)
@@ -440,10 +598,18 @@ const shellSkill: Skill<ShellArgs> = {
       )
       if (!response || !response.ok) {
         ctx.emit(shellTrailEvent(cmd, undefined, response?.error))
+        await auditSafe(ctx, {
+          operation: 'shell', actor: 'sidecar', status: 'failed', resource_path: cwd,
+          approval_id: args.approval_id, message: response?.error ?? 'Sidecar indisponível',
+        })
         return { tool_message: `Falha ao executar "${cmd}": ${response?.error ?? 'Sidecar indisponível'}` }
       }
       const output = String(response.result ?? '').slice(0, 3000)
       ctx.emit(shellTrailEvent(cmd, output.slice(0, 500)))
+      await auditSafe(ctx, {
+        operation: 'shell', actor: 'sidecar', status: 'executed', resource_path: cwd,
+        approval_id: args.approval_id, message: clipAudit(cmd),
+      })
       return {
         tool_message: `🖥️ Resultado de \`${cmd}\`:\n\n\`\`\`\n${output}\n\`\`\``,
       }
@@ -455,6 +621,129 @@ const shellSkill: Skill<ShellArgs> = {
           `Comando: \`${cmd}\`\n\n` +
           `Instale @lexio/desktop para executar comandos reais.`,
       }
+    }
+  },
+}
+
+// ── Skill: Apagar Arquivo ─────────────────────────────────────────────────────
+
+interface DeleteFileArgs {
+  path?: string
+  approved?: boolean
+  approval_id?: string
+}
+
+const deleteFileSkill: Skill<DeleteFileArgs> = {
+  name: 'delete_file',
+  description:
+    'Apaga um arquivo (ou pasta vazia) na pasta de trabalho do sidecar. ' +
+    'Ação destrutiva — exige aprovação do usuário quando a aprovação de ações no PC está ativa.',
+  argsHint: {
+    path: 'Caminho do arquivo a apagar (relativo à pasta de trabalho do sidecar)',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const path = String(args.path ?? '').trim()
+    if (!path) return { tool_message: 'Erro: "path" é obrigatório.' }
+
+    if (approvalGateActive() && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'delete',
+        title: `Apagar: ${path}`,
+        summary: `O assistente quer apagar "${path}" do seu computador. Esta ação é destrutiva e não pode ser desfeita pelo sidecar.`,
+        permissions: ['delete'],
+        resourcePath: path,
+        resumeTool: 'delete_file',
+        resumeArgs: { path },
+      })
+    }
+
+    const wsUrl = resolveSidecarWsUrl(ctx)
+    const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
+    const useSidecar = sidecarOk && !ctx.mock && !!wsUrl
+
+    if (useSidecar) {
+      const response = await callSidecar({ id: uid(), type: 'fs', op: 'delete', payload: { path } }, ctx.signal, wsUrl!)
+      if (!response || !response.ok) {
+        ctx.emit(fsTrailEvent('delete', path, undefined, response?.error))
+        await auditSafe(ctx, {
+          operation: 'delete', actor: 'sidecar', status: 'failed', resource_path: path,
+          approval_id: args.approval_id, message: response?.error ?? 'Sidecar indisponível',
+        })
+        return { tool_message: `Falha ao apagar "${path}": ${response?.error ?? 'Sidecar indisponível'}` }
+      }
+      ctx.emit(fsTrailEvent('delete', path, 'removido'))
+      await auditSafe(ctx, {
+        operation: 'delete', actor: 'sidecar', status: 'executed', resource_path: path,
+        approval_id: args.approval_id, message: 'removido',
+      })
+      return { tool_message: `🗑️ Removido com sucesso: ${path}` }
+    }
+    ctx.emit(fsTrailEvent('delete', path, '(modo demonstração)'))
+    return {
+      tool_message: `⚠️ Modo demonstração — nada foi apagado.\n\nCaminho simulado: ${path}\n\nInstale @lexio/desktop para apagar arquivos reais.`,
+    }
+  },
+}
+
+// ── Skill: Renomear / Mover Arquivo ───────────────────────────────────────────
+
+interface RenameFileArgs {
+  from?: string
+  to?: string
+  approved?: boolean
+  approval_id?: string
+}
+
+const renameFileSkill: Skill<RenameFileArgs> = {
+  name: 'rename_file',
+  description:
+    'Renomeia ou move um arquivo dentro da pasta de trabalho do sidecar. ' +
+    'Exige aprovação do usuário quando a aprovação de ações no PC está ativa.',
+  argsHint: {
+    from: 'Caminho atual do arquivo',
+    to: 'Novo caminho/nome do arquivo (dentro da mesma pasta de trabalho)',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const from = String(args.from ?? '').trim()
+    const to = String(args.to ?? '').trim()
+    if (!from || !to) return { tool_message: 'Erro: "from" e "to" são obrigatórios.' }
+
+    if (approvalGateActive() && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'rename',
+        title: `Renomear/mover: ${from} → ${to}`,
+        summary: `O assistente quer mover "${from}" para "${to}" no seu computador.`,
+        permissions: ['rename'],
+        resourcePath: from,
+        resumeTool: 'rename_file',
+        resumeArgs: { from, to },
+      })
+    }
+
+    const wsUrl = resolveSidecarWsUrl(ctx)
+    const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
+    const useSidecar = sidecarOk && !ctx.mock && !!wsUrl
+
+    if (useSidecar) {
+      const response = await callSidecar({ id: uid(), type: 'fs', op: 'rename', payload: { from, to } }, ctx.signal, wsUrl!)
+      if (!response || !response.ok) {
+        ctx.emit(fsTrailEvent('rename', from, undefined, response?.error))
+        await auditSafe(ctx, {
+          operation: 'rename', actor: 'sidecar', status: 'failed', resource_path: from,
+          approval_id: args.approval_id, message: response?.error ?? 'Sidecar indisponível',
+        })
+        return { tool_message: `Falha ao mover "${from}" → "${to}": ${response?.error ?? 'Sidecar indisponível'}` }
+      }
+      ctx.emit(fsTrailEvent('rename', `${from} → ${to}`, 'movido'))
+      await auditSafe(ctx, {
+        operation: 'rename', actor: 'sidecar', status: 'executed', resource_path: `${from} → ${to}`,
+        approval_id: args.approval_id, message: 'movido',
+      })
+      return { tool_message: `📁 Movido com sucesso:\n- De: ${from}\n- Para: ${to}` }
+    }
+    ctx.emit(fsTrailEvent('rename', `${from} → ${to}`, '(modo demonstração)'))
+    return {
+      tool_message: `⚠️ Modo demonstração — nada foi movido.\n\n${from} → ${to}\n\nInstale @lexio/desktop para mover arquivos reais.`,
     }
   },
 }
@@ -472,9 +761,16 @@ function formatBytes(bytes: number): string {
 /**
  * PR4 sidecar skills — file system and shell access via local desktop agent.
  * Extend this array when adding new sidecar-backed capabilities.
+ *
+ * The destructive `delete_file`/`rename_file` skills are only exposed when the
+ * approval gate (`FF_CHAT_PC_APPROVALS`) is on, so they can never run ungated.
  */
 export function buildSidecarSkills(): Skill[] {
-  return [readFileSkill, listDirSkill, writeFileSkill, shellSkill]
+  const base: Skill[] = [readFileSkill, listDirSkill, writeFileSkill, shellSkill]
+  if (approvalGateActive()) {
+    base.push(deleteFileSkill, renameFileSkill)
+  }
+  return base
 }
 
 /**

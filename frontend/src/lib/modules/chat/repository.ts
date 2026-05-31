@@ -796,6 +796,22 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     return ref.id
   }
 
+  async function listChatSidecarAuditEntries(
+    uid: string,
+    conversationId: string,
+    options?: { limit?: number },
+  ): Promise<{ items: ChatSidecarAuditEntryData[] }> {
+    const db = deps.ensureFirestore()
+    const effectiveUid = await deps.resolveEffectiveUid(uid, 'listChatSidecarAuditEntries')
+    const colRef = chatConversationSubcollection(db, effectiveUid, conversationId, CHAT_AUDIT_SUBCOLLECTION)
+    const max = Math.max(1, Math.min(options?.limit ?? 200, 500))
+    const snap = await deps.withFirestoreRetry(
+      () => getDocs(query(colRef, orderBy('created_at', 'desc'), limit(max))),
+      'listChatSidecarAuditEntries.query',
+    )
+    return { items: snap.docs.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() } as ChatSidecarAuditEntryData)) }
+  }
+
   return {
     listChatConversations,
     getChatConversation,
@@ -820,5 +836,6 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     createChatApprovalRequest,
     updateChatApprovalRequest,
     appendChatSidecarAuditEntry,
+    listChatSidecarAuditEntries,
   }
 }
