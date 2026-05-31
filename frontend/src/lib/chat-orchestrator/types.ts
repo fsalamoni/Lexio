@@ -265,6 +265,8 @@ export type OrchestratorLLMCall = (params: {
   budget: BudgetTracker
   perCallTokenCap: number
   agentLabel?: string
+  /** Sampling temperature (defaults to 0.2). Raised on parse-error retries when FF_CHAT_ENGINE_PLUS is on. */
+  temperature?: number
   /** Cost source_type / function_key for the usage record (defaults to chat_orchestrator). */
   functionKey?: UsageFunctionKey
   /** Cost function label for the usage record. */
