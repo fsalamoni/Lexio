@@ -252,10 +252,13 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
           && i < preset.maxIterations
         ) {
           try {
+            const enginePlus = isEnabled('FF_CHAT_ENGINE_PLUS')
+            const criticThreshold = enginePlus && typeof preset.criticThreshold === 'number' ? preset.criticThreshold : 75
             const verdict = await runCritic(draft, ctx, {
               artifactAuditContext: buildArtifactAuditContext(expectedDeliverables, latestArtifactsByLogicalId.values()),
+              enhanced: enginePlus,
             })
-            if (verdict.shouldStop || verdict.score >= 75) {
+            if (verdict.shouldStop || verdict.score >= criticThreshold) {
               stopReason = verdict.shouldStop ? 'critic_stop' : 'final_answer'
               break
             }

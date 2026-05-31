@@ -35,6 +35,7 @@ import {
   type SkillContext,
 } from '../../lib/chat-orchestrator'
 import { runChatTurnV2 } from '../../lib/chat-orchestrator-v2'
+import { buildWindowedChatHistory } from '../../lib/chat-orchestrator/chat-history-window'
 import { loadSidecarConnectionConfig, getDefaultSidecarConnectionConfig } from '../../lib/chat-orchestrator/sidecar-config'
 import type { PreparedChatInputAttachment } from '../../lib/chat-attachment-ingestion'
 import { uploadChatInputAttachmentFile } from '../../lib/chat-input-storage'
@@ -863,11 +864,15 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
       }
     }
 
-    // Build prior history (concatenate previous turns).
-    const history = state.turns.flatMap(turn => [
-      { role: 'user' as const, content: renderTurnUserContentForHistory(turn) },
-      ...(turn.assistant_markdown ? [{ role: 'assistant' as const, content: turn.assistant_markdown }] : []),
-    ])
+    // Build prior history. With FF_CHAT_ENGINE_PLUS, collapse older turns into a
+    // rolling-summary note (cross-turn memory) to bound token growth on long
+    // conversations; otherwise replay every prior turn verbatim.
+    const history = isEnabled('FF_CHAT_ENGINE_PLUS')
+      ? buildWindowedChatHistory(state.turns, renderTurnUserContentForHistory)
+      : state.turns.flatMap(turn => [
+          { role: 'user' as const, content: renderTurnUserContentForHistory(turn) },
+          ...(turn.assistant_markdown ? [{ role: 'assistant' as const, content: turn.assistant_markdown }] : []),
+        ])
 
     try {
       const result = await (useChatV2 ? runChatTurnV2 : runChatTurn)({

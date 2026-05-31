@@ -187,6 +187,8 @@ export interface EffortPreset {
   summarizeAt: number
   /** Optional hard USD ceiling per turn (enforced when FF_CHAT_ENGINE_PLUS is on). */
   maxCostUsd?: number
+  /** Critic acceptance score (0-100). Used when FF_CHAT_ENGINE_PLUS is on; defaults to 75. */
+  criticThreshold?: number
 }
 
 /** Budget tracker — stops the loop when limits are exceeded. */
