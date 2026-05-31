@@ -24,6 +24,31 @@ describe('parseAgentOutputPackage', () => {
     expect(parsed.workPackage.thought?.summary).toMatch(/sem pacote operacional estruturado/i)
   })
 
+  it('disambiguates colliding artifact ids within a package', () => {
+    const pkg = {
+      lexio_agent_package: {
+        result_markdown: 'ok',
+        artifacts: [
+          { logical_document_id: 'minuta', title: 'A', version: 1, kind: 'text', format: 'markdown' },
+          { logical_document_id: 'minuta', title: 'B', version: 1, kind: 'text', format: 'markdown' },
+        ],
+      },
+    }
+    const parsed = parseAgentOutputPackage({ ...baseArgs, rawOutput: '```json\n' + JSON.stringify(pkg) + '\n```' })
+    const ids = parsed.workPackage.artifacts!.map(a => a.artifact_id)
+    expect(ids).toHaveLength(2)
+    expect(new Set(ids).size).toBe(2) // unique despite same logical_document_id + version
+  })
+
+  it('collects artifacts from multiple package blocks', () => {
+    const block = (id: string) => '```json\n' + JSON.stringify({
+      lexio_agent_package: { result_markdown: 'r', artifacts: [{ logical_document_id: id, title: id, version: 1, kind: 'text', format: 'markdown' }] },
+    }) + '\n```'
+    const parsed = parseAgentOutputPackage({ ...baseArgs, rawOutput: `${block('doc-a')}\n\ntexto\n\n${block('doc-b')}` })
+    const logicalIds = parsed.workPackage.artifacts!.map(a => a.logical_document_id)
+    expect(logicalIds).toEqual(expect.arrayContaining(['doc-a', 'doc-b']))
+  })
+
   it('extracts structured package JSON and normalizes artifacts', () => {
     const parsed = parseAgentOutputPackage({
       ...baseArgs,
