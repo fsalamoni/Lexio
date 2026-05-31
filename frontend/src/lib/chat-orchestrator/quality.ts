@@ -10,7 +10,20 @@ export interface CriticVerdict {
 
 export interface CriticOptions {
   artifactAuditContext?: string
+  /**
+   * When true, use the domain-aware, multi-axis rubric (FF_CHAT_ENGINE_PLUS).
+   * The output JSON shape is unchanged ({score, reasons, should_stop}); the
+   * model is just asked to reason across correctness/coverage/clarity/risk and
+   * to weigh the relevant domain (jurídico/código/mídia).
+   */
+  enhanced?: boolean
 }
+
+const ENHANCED_RUBRIC = `Avalie de forma multi-eixo e ciente do domínio do pedido:
+- Identifique o domínio predominante (jurídico, código/engenharia, mídia, dados, ou geral) e julgue pelo padrão desse domínio.
+- Pontue mentalmente quatro eixos (0-100): corretude, cobertura do pedido, clareza e risco (quanto menor o risco, melhor).
+- O "score" final deve refletir o pior eixo crítico — uma resposta com erro factual/jurídico não pode ter score alto mesmo se clara.
+- Em "reasons", cite o eixo mais fraco e o que falta objetivamente para subir o score.`
 
 /**
  * Run the critic on the current draft. The orchestrator invokes this
@@ -31,7 +44,7 @@ export async function runCritic(draft: string, ctx: SkillContext, options: Criti
   const artifactContext = options.artifactAuditContext?.trim()
   const promptTask = `Avalie o rascunho abaixo. Responda APENAS com JSON válido no formato:
 {"score": <0-100>, "reasons": [<motivos curtos>], "should_stop": <true|false>}
-
+${options.enhanced ? `\n${ENHANCED_RUBRIC}\n` : ''}
 Regras de entrega material:
 - Prompt, descricao textual, Markdown, DOCX, PDF ou ZIP generico nao cumprem pedido de imagem/audio/video/formato nativo.
 - Se o pedido exige artifact literal, should_stop so pode ser true quando o artifact correto existir e estiver pronto para download/preview.

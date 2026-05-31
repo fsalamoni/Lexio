@@ -19,6 +19,8 @@ export const EFFORT_PRESETS: Record<ChatEffortLevel, EffortPreset> = {
     perCallTokenCap: 8_000,
     criticInterval: 99,
     summarizeAt: 0.8,
+    maxCostUsd: 0.15,
+    criticThreshold: 70,
   },
   medio: {
     maxIterations: 8,
@@ -27,6 +29,8 @@ export const EFFORT_PRESETS: Record<ChatEffortLevel, EffortPreset> = {
     perCallTokenCap: 16_000,
     criticInterval: 2,
     summarizeAt: 0.7,
+    maxCostUsd: 0.5,
+    criticThreshold: 75,
   },
   profundo: {
     maxIterations: 14,
@@ -35,6 +39,8 @@ export const EFFORT_PRESETS: Record<ChatEffortLevel, EffortPreset> = {
     perCallTokenCap: 24_000,
     criticInterval: 2,
     summarizeAt: 0.6,
+    maxCostUsd: 1.5,
+    criticThreshold: 80,
   },
   deep_research: {
     maxIterations: 24,
@@ -43,6 +49,8 @@ export const EFFORT_PRESETS: Record<ChatEffortLevel, EffortPreset> = {
     perCallTokenCap: 32_000,
     criticInterval: 2,
     summarizeAt: 0.5,
+    maxCostUsd: 3.5,
+    criticThreshold: 85,
   },
 }
 

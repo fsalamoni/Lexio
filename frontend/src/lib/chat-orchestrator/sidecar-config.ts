@@ -11,10 +11,11 @@
  */
 import { IS_FIREBASE } from '../firebase'
 import { ensureUserSettingsMigrated, getCurrentUserId, saveUserSettings } from '../firestore-service'
-import type { UserSettingsData } from '../firestore-types'
+import type { ChatSidecarApprovalPolicy, UserSettingsData } from '../firestore-types'
 
 export const DEFAULT_SIDECAR_PORT = 9420
 export const DEFAULT_SIDECAR_HOST = '127.0.0.1'
+export const DEFAULT_SIDECAR_APPROVAL_POLICY: ChatSidecarApprovalPolicy = 'per_command'
 
 export interface SidecarConnectionConfig {
   /** Pairing token from the sidecar banner. Empty when not configured. */
@@ -25,10 +26,35 @@ export interface SidecarConnectionConfig {
   port: number
   /** Whether the user enabled PC actions at all. */
   enabled: boolean
+  /**
+   * How write/delete/rename/shell actions are gated when `FF_CHAT_PC_APPROVALS`
+   * is on. Reads are never gated. Optional for backward compatibility with
+   * configs stored before this field existed (defaults to `per_command`).
+   */
+  approval_policy?: ChatSidecarApprovalPolicy
 }
 
 export function getDefaultSidecarConnectionConfig(): SidecarConnectionConfig {
-  return { token: '', host: DEFAULT_SIDECAR_HOST, port: DEFAULT_SIDECAR_PORT, enabled: false }
+  return {
+    token: '',
+    host: DEFAULT_SIDECAR_HOST,
+    port: DEFAULT_SIDECAR_PORT,
+    enabled: false,
+    approval_policy: DEFAULT_SIDECAR_APPROVAL_POLICY,
+  }
+}
+
+const VALID_APPROVAL_POLICIES: ReadonlySet<ChatSidecarApprovalPolicy> = new Set<ChatSidecarApprovalPolicy>([
+  'always',
+  'per_command',
+  'batch',
+  'trusted_readonly',
+])
+
+function normalizeApprovalPolicy(value: unknown): ChatSidecarApprovalPolicy {
+  return typeof value === 'string' && VALID_APPROVAL_POLICIES.has(value as ChatSidecarApprovalPolicy)
+    ? (value as ChatSidecarApprovalPolicy)
+    : DEFAULT_SIDECAR_APPROVAL_POLICY
 }
 
 function resolveScopedUid(uid?: string): string | undefined {
@@ -43,6 +69,7 @@ function normalize(stored: Partial<SidecarConnectionConfig> | undefined): Sideca
     host: typeof stored.host === 'string' && stored.host.trim() ? stored.host.trim() : defaults.host,
     port: Number.isFinite(stored.port) ? Number(stored.port) : defaults.port,
     enabled: typeof stored.enabled === 'boolean' ? stored.enabled : Boolean(stored.token),
+    approval_policy: normalizeApprovalPolicy(stored.approval_policy),
   }
 }
 

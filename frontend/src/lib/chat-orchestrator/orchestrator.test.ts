@@ -350,6 +350,31 @@ describe('runChatTurn', () => {
     expect(result.assistant_markdown).toBe('# ok')
   })
 
+  it('tolerates an extra parse retry and bumps temperature under FF_CHAT_ENGINE_PLUS', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_ENGINE_PLUS: true })
+    try {
+      let attempt = 0
+      const llmCall = vi.fn(async () => {
+        attempt += 1
+        if (attempt <= 2) return { raw: 'not json', usage: null }
+        return { raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# ok3' } }), usage: null }
+      })
+
+      const result = await runChatTurn(makeInput({ llmCall }))
+
+      // Default tolerance gives up after 2; engine-plus reaches the valid 3rd try.
+      expect(attempt).toBe(3)
+      expect(result.assistant_markdown).toBe('# ok3')
+      // Temperature escalates on each retry: undefined → 0.4 → 0.6.
+      const calls = llmCall.mock.calls as unknown as Array<[Parameters<OrchestratorLLMCall>[0]]>
+      expect(calls[0][0].temperature).toBeUndefined()
+      expect(calls[1][0].temperature).toBeCloseTo(0.4, 5)
+      expect(calls[2][0].temperature).toBeCloseTo(0.6, 5)
+    } finally {
+      clearRuntimeFeatureFlags()
+    }
+  })
+
   it('records llm executions in the result so cost-analytics can ingest them', async () => {
     const llmCall = vi.fn(async (params: Parameters<OrchestratorLLMCall>[0]) => ({
       raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# pronto' } }),

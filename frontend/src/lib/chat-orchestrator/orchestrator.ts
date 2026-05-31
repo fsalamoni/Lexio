@@ -62,7 +62,9 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
 
   const preset = EFFORT_PRESETS[input.effort]
   const profile = input.profile ?? DEFAULT_V1_PROFILE
-  const budget = createBudget(preset.maxTokens)
+  // Hard USD ceiling is opt-in (FF_CHAT_ENGINE_PLUS); without it only the token
+  // cap / hard stop apply, preserving the original behavior.
+  const budget = createBudget(preset.maxTokens, isEnabled('FF_CHAT_ENGINE_PLUS') ? preset.maxCostUsd : undefined)
   // The orchestrator commands the whole turn — under lean orchestration it is
   // never token-capped and never force-summarised: only an explicit hard stop
   // (user cancel) or the iteration ceiling end the loop.
@@ -94,6 +96,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     onAgentToken: input.onAgentToken,
     persistWorkPackage: input.persistWorkPackage,
     createApprovalRequest: input.createApprovalRequest,
+    appendAuditEntry: input.appendAuditEntry,
     mock: Boolean(input.mock),
     profile,
     sidecar: input.sidecar,
@@ -127,6 +130,13 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
 
     let decision: OrchestratorDecision
     try {
+      // Parse-error resilience (FF_CHAT_ENGINE_PLUS): nudge temperature up after
+      // each consecutive failure so a stuck model varies its output before we
+      // give up; tolerate one extra retry before forcing finalisation.
+      const enginePlus = isEnabled('FF_CHAT_ENGINE_PLUS')
+      const retryTemperature = enginePlus && consecutiveParseErrors > 0
+        ? Math.min(0.2 + 0.2 * consecutiveParseErrors, 0.6)
+        : undefined
       decision = await callOrchestratorAndParse({
         systemPrompt,
         history,
@@ -134,13 +144,15 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
         llmCall,
         perCallTokenCap: preset.perCallTokenCap,
         allowedTools,
+        temperature: retryTemperature,
       })
       consecutiveParseErrors = 0
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') throw err
       consecutiveParseErrors += 1
-      if (consecutiveParseErrors >= 2) {
-        // Two parse failures in a row — give up on the loop and let the
+      const maxParseRetries = isEnabled('FF_CHAT_ENGINE_PLUS') ? 3 : 2
+      if (consecutiveParseErrors >= maxParseRetries) {
+        // Too many parse failures in a row — give up on the loop and let the
         // forced finaliser produce a closing answer from whatever we have.
         emitTrail({
           type: 'error',
@@ -149,12 +161,12 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
         })
         break
       }
-      // Coach the orchestrator with a stricter reminder and try again.
-      history = appendToolMessage(
-        history,
-        'Sua última resposta não pôde ser parseada como JSON. Responda APENAS com o objeto JSON do formato {"tool": "...", "args": {...}}.',
-        'parse_error',
-      )
+      // Coach the orchestrator with an escalating reminder and try again. The
+      // second attempt gets a concrete example to anchor the format.
+      const reminder = consecutiveParseErrors >= 2
+        ? 'Sua resposta continua inválida. Responda EXCLUSIVAMENTE com um objeto JSON, sem texto antes/depois, por exemplo: {"tool":"submit_final_answer","args":{"markdown":"..."}}'
+        : 'Sua última resposta não pôde ser parseada como JSON. Responda APENAS com o objeto JSON do formato {"tool": "...", "args": {...}}.'
+      history = appendToolMessage(history, reminder, 'parse_error')
       continue
     }
 
@@ -249,10 +261,13 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
           && i < preset.maxIterations
         ) {
           try {
+            const enginePlus = isEnabled('FF_CHAT_ENGINE_PLUS')
+            const criticThreshold = enginePlus && typeof preset.criticThreshold === 'number' ? preset.criticThreshold : 75
             const verdict = await runCritic(draft, ctx, {
               artifactAuditContext: buildArtifactAuditContext(expectedDeliverables, latestArtifactsByLogicalId.values()),
+              enhanced: enginePlus,
             })
-            if (verdict.shouldStop || verdict.score >= 75) {
+            if (verdict.shouldStop || verdict.score >= criticThreshold) {
               stopReason = verdict.shouldStop ? 'critic_stop' : 'final_answer'
               break
             }
@@ -732,10 +747,11 @@ interface CallOrchestratorAndParseArgs {
   llmCall: typeof callOrchestratorLLM
   perCallTokenCap: number
   allowedTools: string[]
+  temperature?: number
 }
 
 async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Promise<OrchestratorDecision> {
-  const { systemPrompt, history, ctx, llmCall, perCallTokenCap, allowedTools } = args
+  const { systemPrompt, history, ctx, llmCall, perCallTokenCap, allowedTools, temperature } = args
 
   // ─ Streaming: emit `orchestrator_thought` events token-by-token ─
   let accumulated = ''
@@ -760,6 +776,7 @@ async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Pro
     signal: ctx.signal,
     budget: ctx.budget,
     perCallTokenCap,
+    ...(typeof temperature === 'number' ? { temperature } : {}),
     agentLabel: profile.orchestratorLabel,
     functionKey: profile.functionKey,
     functionLabel: profile.functionLabel,

@@ -22,6 +22,7 @@ import {
   assertPermission,
   SandboxError,
 } from './sandbox.mjs'
+import { gitStatus, gitDiff, gitCommit, gitPull, gitPush } from './git.mjs'
 
 const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB read/write ceiling
 const SHELL_MAX_TIMEOUT_SEC = 30
@@ -72,10 +73,16 @@ export function createHandler(config) {
       if (op === 'read') return readFile(payload)
       if (op === 'list') return listDir(payload)
       if (op === 'write') return writeFile(payload)
+      if (op === 'delete') return deleteEntry(payload)
+      if (op === 'rename' || op === 'move') return renameEntry(payload)
     }
 
     if (type === 'shell' && op === 'exec') {
       return runShell(payload)
+    }
+
+    if (type === 'git') {
+      return runGitOp(op, payload)
     }
 
     throw new SandboxError(`Operação não suportada: ${type}/${op}`, 'UNSUPPORTED_OP')
@@ -138,6 +145,60 @@ export function createHandler(config) {
     await fs.mkdir(path.dirname(target), { recursive: true })
     await fs.writeFile(target, content, 'utf8')
     return { path: target, bytes }
+  }
+
+  async function deleteEntry(payload) {
+    assertPermission(permissions, 'delete')
+    const target = resolveInsideRoot(root, payload.path)
+    if (path.resolve(target) === root) {
+      throw new SandboxError('Não é permitido apagar a raiz da pasta de trabalho.', 'ROOT_PROTECTED')
+    }
+    const base = path.basename(target)
+    if (isBlockedByGlob(base, blockedGlobs)) {
+      throw new SandboxError(`Remoção de "${base}" bloqueada pela lista de bloqueio.`, 'BLOCKED')
+    }
+    const stat = await fs.stat(target)
+    if (stat.isDirectory()) {
+      // Only empty directories are removed; recursive deletes are refused as a
+      // defense-in-depth measure even with the `delete` permission granted.
+      await fs.rmdir(target)
+    } else {
+      await fs.unlink(target)
+    }
+    return { path: target, deleted: true, kind: stat.isDirectory() ? 'dir' : 'file' }
+  }
+
+  async function renameEntry(payload) {
+    assertPermission(permissions, 'rename')
+    const from = resolveInsideRoot(root, payload.from ?? payload.path)
+    const to = resolveInsideRoot(root, payload.to ?? payload.target_path)
+    if (path.resolve(from) === root || path.resolve(to) === root) {
+      throw new SandboxError('Não é permitido renomear a raiz da pasta de trabalho.', 'ROOT_PROTECTED')
+    }
+    const fromBase = path.basename(from)
+    const toBase = path.basename(to)
+    if (isBlockedByGlob(fromBase, blockedGlobs) || isBlockedByGlob(toBase, blockedGlobs)) {
+      throw new SandboxError('Origem ou destino está na lista de bloqueio.', 'BLOCKED')
+    }
+    if (allowedGlobs.length > 0 && !matchesAnyGlob(toBase, allowedGlobs)) {
+      throw new SandboxError(`Destino "${toBase}" não corresponde aos padrões permitidos.`, 'NOT_ALLOWED')
+    }
+    await fs.mkdir(path.dirname(to), { recursive: true })
+    await fs.rename(from, to)
+    return { from, to, moved: true }
+  }
+
+  async function runGitOp(op, payload = {}) {
+    assertPermission(permissions, 'execute')
+    const cwd = payload.cwd ? resolveInsideRoot(root, payload.cwd) : root
+    switch (op) {
+      case 'status': return gitStatus(cwd)
+      case 'diff': return gitDiff(cwd, payload)
+      case 'commit': return gitCommit(cwd, payload)
+      case 'pull': return gitPull(cwd, payload)
+      case 'push': return gitPush(cwd, payload)
+      default: throw new SandboxError(`Operação git não suportada: ${op}`, 'UNSUPPORTED_OP')
+    }
   }
 
   function runShell(payload) {

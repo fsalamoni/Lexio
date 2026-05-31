@@ -11,6 +11,7 @@ import { buildOperationalFailureMarkdown } from './operational-failure'
  */
 export const callOrchestratorLLM: OrchestratorLLMCall = async (params) => {
   const { systemPrompt, history, models, fallbackModels, modelKey, apiKey, signal, perCallTokenCap, agentLabel, onToken } = params
+  const temperature = typeof params.temperature === 'number' ? params.temperature : 0.2
   const functionKey = params.functionKey ?? 'chat_orchestrator'
   const functionLabel = params.functionLabel ?? 'Orquestrador (Chat)'
   const model = models[modelKey]
@@ -39,8 +40,8 @@ export const callOrchestratorLLM: OrchestratorLLMCall = async (params) => {
   try {
     const fallbacks = fallbackModels?.[modelKey] ?? []
     result = fallbacks.length > 0
-      ? await callLLMWithMessagesFallback(apiKey, messages, model, fallbacks, perCallTokenCap, 0.2, llmOptions)
-      : await callLLMWithMessages(apiKey, messages, model, perCallTokenCap, 0.2, llmOptions)
+      ? await callLLMWithMessagesFallback(apiKey, messages, model, fallbacks, perCallTokenCap, temperature, llmOptions)
+      : await callLLMWithMessages(apiKey, messages, model, perCallTokenCap, temperature, llmOptions)
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     // Surface a synthetic forced-finalisation so the loop terminates

@@ -200,6 +200,46 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_CHAT_ORCHESTRATOR_V2',
     devToggleable: true,
   },
+  {
+    key: 'FF_CHAT_PC_APPROVALS',
+    label: 'Chat: Aprovação real de ações no PC',
+    description: 'Exige aprovação explícita do usuário antes de escrever, apagar, renomear ou executar comandos no PC via sidecar; grava auditoria de cada ação e mostra o status do sidecar ao vivo. Leituras seguem livres.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_PC_APPROVALS',
+    devToggleable: true,
+  },
+  {
+    key: 'FF_CHAT_PC_GIT',
+    label: 'Chat: Operações git no PC',
+    description: 'Habilita as skills de git (status, diff, commit, pull, push) no sidecar local, sujeitas à mesma aprovação das ações de escrita/execução.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_PC_GIT',
+    devToggleable: true,
+  },
+  {
+    key: 'FF_CHAT_GITHUB',
+    label: 'Chat: Conector GitHub',
+    description: 'Habilita o conector GitHub (token PAT salvo nas configurações) para ler repositórios, criar issues/PRs e operar git autenticado via sidecar.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_GITHUB',
+    devToggleable: true,
+  },
+  {
+    key: 'FF_CHAT_ENGINE_PLUS',
+    label: 'Chat: Motor aprimorado',
+    description: 'Crítico ciente de domínio e multi-eixo, teto de custo em USD por esforço, cache de prompt do sistema e memória rolante entre turnos.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_ENGINE_PLUS',
+    devToggleable: true,
+  },
+  {
+    key: 'FF_CHAT_CONVO_TOOLS',
+    label: 'Chat: Ferramentas de conversa',
+    description: 'Exportar conversa (markdown/JSON), busca e organização (fixar/arquivar) na lista de conversas e timeout em perguntas pendentes.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_CONVO_TOOLS',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────

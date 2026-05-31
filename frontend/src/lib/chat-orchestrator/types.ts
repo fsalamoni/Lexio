@@ -12,10 +12,27 @@ import type {
   ChatApprovalRequestData,
   ChatContextSourceRef,
   ChatPendingQuestionData,
+  ChatSidecarApprovalPolicy,
+  ChatSidecarAuditEntryData,
   ChatTrailEvent,
   ChatTurnAttachment,
   ChatTurnStatus,
 } from '../firestore-types'
+
+/** Resolved sidecar (PC) connection used by filesystem/shell skills. */
+export interface SidecarRuntimeConfig {
+  token: string
+  host: string
+  port: number
+  enabled: boolean
+  approval_policy?: ChatSidecarApprovalPolicy
+}
+
+/** Audit entry hook payload — everything except the keys the repository fills. */
+export type ChatSidecarAuditEntryInput = Omit<
+  ChatSidecarAuditEntryData,
+  'id' | 'conversation_id' | 'created_at'
+> & { created_at?: string }
 import type { UsageExecutionRecord, UsageFunctionKey } from '../cost-analytics'
 
 /** Re-export for consumers so they only need a single import path. */
@@ -114,7 +131,7 @@ export interface SkillContext {
    * Resolved sidecar (PC) connection used by filesystem/shell skills. When
    * absent, those skills fall back to demo mode. Loaded once per turn.
    */
-  sidecar?: { token: string; host: string; port: number; enabled: boolean }
+  sidecar?: SidecarRuntimeConfig
   /** Streaming callback: fires for each token delta produced by any specialist agent. */
   onAgentToken?: (agentKey: string, delta: string, total: string) => void
   /** Optional durable persistence hook; awaited before the runtime advances to the next iteration. */
@@ -123,6 +140,12 @@ export interface SkillContext {
   createApprovalRequest?: (
     data: Omit<ChatApprovalRequestData, 'id' | 'conversation_id' | 'created_at' | 'updated_at' | 'status'> & { status?: ChatApprovalRequestData['status'] }
   ) => Promise<string>
+  /**
+   * Optional audit hook — sidecar/PC skills append one entry per proposed,
+   * executed or failed filesystem/shell/git action. Best-effort: failures must
+   * never block the action itself.
+   */
+  appendAuditEntry?: (entry: ChatSidecarAuditEntryInput) => Promise<void>
 }
 
 /**
@@ -162,6 +185,10 @@ export interface EffortPreset {
   criticInterval: number
   /** Compress history when used / max ≥ this threshold. */
   summarizeAt: number
+  /** Optional hard USD ceiling per turn (enforced when FF_CHAT_ENGINE_PLUS is on). */
+  maxCostUsd?: number
+  /** Critic acceptance score (0-100). Used when FF_CHAT_ENGINE_PLUS is on; defaults to 75. */
+  criticThreshold?: number
 }
 
 /** Budget tracker — stops the loop when limits are exceeded. */
@@ -214,10 +241,12 @@ export interface RunChatTurnInput {
   persistWorkPackage?: (workPackage: ChatAgentWorkPackage) => Promise<ChatAgentWorkPackage>
   /** Optional approval persistence hook for costly or side-effectful actions. */
   createApprovalRequest?: SkillContext['createApprovalRequest']
+  /** Optional audit hook for sidecar/PC actions. */
+  appendAuditEntry?: SkillContext['appendAuditEntry']
   /** Orchestration profile (defaults to v1 when omitted). Set by `runChatTurnV2`. */
   profile?: ChatOrchestratorProfile
   /** Resolved sidecar (PC) connection for filesystem/shell skills. */
-  sidecar?: { token: string; host: string; port: number; enabled: boolean }
+  sidecar?: SidecarRuntimeConfig
 }
 
 /**
@@ -236,6 +265,8 @@ export type OrchestratorLLMCall = (params: {
   budget: BudgetTracker
   perCallTokenCap: number
   agentLabel?: string
+  /** Sampling temperature (defaults to 0.2). Raised on parse-error retries when FF_CHAT_ENGINE_PLUS is on. */
+  temperature?: number
   /** Cost source_type / function_key for the usage record (defaults to chat_orchestrator). */
   functionKey?: UsageFunctionKey
   /** Cost function label for the usage record. */

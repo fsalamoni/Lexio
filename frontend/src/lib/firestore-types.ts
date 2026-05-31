@@ -99,6 +99,8 @@ export interface MultimodalPolicyConfig {
 export interface UserSettingsData {
   legacy_migrated_at?: string
   api_keys?: Record<string, string>
+  /** GitHub connector config (fine-grained PAT + optional default owner/repo). */
+  github_connection?: { token: string; default_owner?: string; default_repo?: string }
   /** User-scoped runtime overrides for canary/frontend feature flags. */
   feature_flags?: Record<string, boolean>
   /**
@@ -1528,6 +1530,8 @@ export interface ChatConversationData {
   sidecar_root_path?: string
   /** Short preview of the latest assistant answer (used in the sidebar list). */
   last_preview?: string
+  /** Pin marker — pinned conversations sort to the top of the list. Empty/absent = not pinned. */
+  pinned_at?: string
   created_at: string
   updated_at: string
   /** Soft-delete marker. Conversations with this field are hidden from normal lists but their turns remain preserved. */

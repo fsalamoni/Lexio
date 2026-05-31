@@ -612,6 +612,7 @@ export const ensureChatConversation = chatRepository.ensureChatConversation
 export const renameChatConversation = chatRepository.renameChatConversation
 export const updateChatConversationEffort = chatRepository.updateChatConversationEffort
 export const updateChatConversationPreview = chatRepository.updateChatConversationPreview
+export const setChatConversationPinned = chatRepository.setChatConversationPinned
 export const deleteChatConversation = chatRepository.deleteChatConversation
 export const listChatTurns = chatRepository.listChatTurns
 export const appendChatTurn = chatRepository.appendChatTurn
@@ -628,6 +629,7 @@ export const updateChatSidecarCommand = chatRepository.updateChatSidecarCommand
 export const createChatApprovalRequest = chatRepository.createChatApprovalRequest
 export const updateChatApprovalRequest = chatRepository.updateChatApprovalRequest
 export const appendChatSidecarAuditEntry = chatRepository.appendChatSidecarAuditEntry
+export const listChatSidecarAuditEntries = chatRepository.listChatSidecarAuditEntries
 
 // ── Password change via Firebase Auth ────────────────────────────────────────
 

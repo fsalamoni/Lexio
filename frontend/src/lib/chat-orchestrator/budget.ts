@@ -8,7 +8,7 @@ import type { BudgetTracker } from './types'
  * trigger an explicit hard-stop with a reason; the orchestrator surfaces
  * that as a `budget_hit` trail event.
  */
-export function createBudget(maxTokens: number): BudgetTracker {
+export function createBudget(maxTokens: number, maxCostUsd?: number): BudgetTracker {
   let tokens = 0
   let cost = 0
   let hardStopReason: string | undefined
@@ -20,6 +20,12 @@ export function createBudget(maxTokens: number): BudgetTracker {
       const c = Number(record.cost_usd ?? 0)
       tokens += Number.isFinite(t) ? t : 0
       cost += Number.isFinite(c) ? c : 0
+      // Hard USD ceiling (opt-in via effort preset). Reuses the hard-stop path
+      // so the loop stops even under lean orchestration (which ignores the
+      // token cap) and surfaces a clear `cost_cap_reached` reason.
+      if (maxCostUsd && maxCostUsd > 0 && cost >= maxCostUsd && !hardStopReason) {
+        hardStopReason = 'cost_cap_reached'
+      }
       // We only push records that look like full UsageExecutionRecord
       // shapes — partial entries from skills are still counted toward
       // the running totals but not persisted in `llm_executions`.

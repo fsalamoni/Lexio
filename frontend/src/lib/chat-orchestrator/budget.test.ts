@@ -26,6 +26,21 @@ describe('budget', () => {
     expect(budget.isHardStopped()).toEqual({ stopped: true, reason: 'user_cancel' })
   })
 
+  it('enforces an optional USD cost ceiling via the hard-stop path', () => {
+    const budget = createBudget(1_000_000, 0.5)
+    budget.recordUsage({ total_tokens: 10, cost_usd: 0.3 })
+    expect(budget.exceeded()).toBe(false)
+    budget.recordUsage({ total_tokens: 10, cost_usd: 0.25 }) // cumulative 0.55 ≥ 0.5
+    expect(budget.exceeded()).toBe(true)
+    expect(budget.isHardStopped()).toEqual({ stopped: true, reason: 'cost_cap_reached' })
+  })
+
+  it('ignores the cost ceiling when not provided', () => {
+    const budget = createBudget(1_000_000)
+    budget.recordUsage({ total_tokens: 10, cost_usd: 99 })
+    expect(budget.exceeded()).toBe(false)
+  })
+
   it('only persists records that look like full UsageExecutionRecord shapes', () => {
     const budget = createBudget(100_000)
     budget.recordUsage({ total_tokens: 10, cost_usd: 0 })

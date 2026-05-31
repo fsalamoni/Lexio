@@ -44,6 +44,7 @@ import DocumentV4ToolsConfigCard from '../components/admin/DocumentV4ToolsConfig
 import ChatOrchestratorV2ConfigCard from '../components/admin/ChatOrchestratorV2ConfigCard'
 import ChatOrchestratorV2ToolsConfigCard from '../components/admin/ChatOrchestratorV2ToolsConfigCard'
 import SidecarConnectionCard from '../components/admin/SidecarConnectionCard'
+import GithubConnectorCard from '../components/admin/GithubConnectorCard'
 import { isEnabled as isFeatureEnabled } from '../lib/feature-flags'
 import FallbackPriorityConfigCard from '../components/admin/FallbackPriorityConfigCard'
 import MultimodalPolicyCard from '../components/admin/MultimodalPolicyCard'
@@ -1097,6 +1098,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <SidecarConnectionCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* GitHub connector (PAT) — behind FF_CHAT_GITHUB */}
+      {IS_FIREBASE && isFeatureEnabled('FF_CHAT_GITHUB') && (
+        <AdminCollapsibleSection
+          id="section_github_connector"
+          title="Conector GitHub — issues, PRs e leitura de repositórios"
+          icon={Brain}
+          iconColor="text-slate-700"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <GithubConnectorCard />
         </AdminCollapsibleSection>
       )}
 
