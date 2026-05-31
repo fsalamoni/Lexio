@@ -32,11 +32,19 @@ const SIDECAR_WS_TIMEOUT_MS = 5000
  * `FF_CHAT_PC_APPROVALS` is on. Reads (`read`/`list`/`git_status`/`git_diff`)
  * are never gated.
  */
-type GatedSidecarOp = 'write' | 'delete' | 'rename' | 'move' | 'shell' | 'git_commit' | 'git_push' | 'git_pull'
+type GatedSidecarOp = 'read' | 'list' | 'write' | 'delete' | 'rename' | 'move' | 'shell' | 'git_status' | 'git_diff' | 'git_commit' | 'git_push' | 'git_pull'
 
 /** True when the approval gate is active (the user opted in via the flag). */
 function approvalGateActive(): boolean {
   return isEnabled('FF_CHAT_PC_APPROVALS')
+}
+
+/**
+ * Whether read operations also require approval. Reads are free under the
+ * default policy; only the `always` ("máxima cautela") policy gates them too.
+ */
+function readsRequireApproval(ctx: SkillContext): boolean {
+  return approvalGateActive() && ctx.sidecar?.approval_policy === 'always'
 }
 
 /** Append an audit entry, swallowing errors — auditing must never block an action. */
@@ -66,6 +74,7 @@ function shortHash(text: string): string {
 
 function riskForOp(op: GatedSidecarOp): 'low' | 'medium' | 'high' {
   if (op === 'shell' || op === 'delete' || op === 'git_push') return 'high'
+  if (op === 'read' || op === 'list' || op === 'git_status' || op === 'git_diff') return 'low'
   return 'medium'
 }
 
@@ -289,6 +298,8 @@ function shellTrailEvent(cmd: string, result?: string, error?: string): ChatTrai
 interface ReadFileArgs {
   path?: string
   max_lines?: number
+  approved?: boolean
+  approval_id?: string
 }
 
 const readFileSkill: Skill<ReadFileArgs> = {
@@ -307,6 +318,18 @@ const readFileSkill: Skill<ReadFileArgs> = {
       return { tool_message: 'Erro: "path" é obrigatório.' }
     }
     const maxLines = Number(args.max_lines ?? 200) || 200
+
+    if (readsRequireApproval(ctx) && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'read',
+        title: `Ler arquivo: ${path}`,
+        summary: `O assistente quer ler "${path}" no seu computador (política de máxima cautela: leituras também pedem aprovação).`,
+        permissions: ['read'],
+        resourcePath: path,
+        resumeTool: 'read_file',
+        resumeArgs: { path, max_lines: maxLines },
+      })
+    }
 
     const wsUrl = resolveSidecarWsUrl(ctx)
     const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
@@ -360,6 +383,8 @@ const readFileSkill: Skill<ReadFileArgs> = {
 interface ListDirArgs {
   path?: string
   pattern?: string
+  approved?: boolean
+  approval_id?: string
 }
 
 const listDirSkill: Skill<ListDirArgs> = {
@@ -374,6 +399,18 @@ const listDirSkill: Skill<ListDirArgs> = {
   async run(args, ctx): Promise<SkillResult> {
     const path = String(args.path ?? '').trim() || '~'
     const pattern = String(args.pattern ?? '').trim() || undefined
+
+    if (readsRequireApproval(ctx) && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'list',
+        title: `Listar diretório: ${path}`,
+        summary: `O assistente quer listar "${path}" no seu computador (política de máxima cautela: leituras também pedem aprovação).`,
+        permissions: ['read'],
+        resourcePath: path,
+        resumeTool: 'list_directory',
+        resumeArgs: { path, ...(pattern ? { pattern } : {}) },
+      })
+    }
 
     const wsUrl = resolveSidecarWsUrl(ctx)
     const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
@@ -771,13 +808,19 @@ async function callGit(ctx: SkillContext, op: string, payload: Record<string, un
 
 const DEMO_GIT_MESSAGE = '⚠️ Modo demonstração — operação git indisponível sem o sidecar @lexio/desktop em execução.'
 
-interface GitStatusArgs { cwd?: string }
+interface GitStatusArgs { cwd?: string; approved?: boolean; approval_id?: string }
 const gitStatusSkill: Skill<GitStatusArgs> = {
   name: 'git_status',
   description: 'Mostra o status do repositório git na pasta de trabalho do sidecar (branch, arquivos alterados, ahead/behind). Somente leitura.',
   argsHint: { cwd: 'Subpasta do repositório (opcional)' },
   async run(args, ctx): Promise<SkillResult> {
     const cwd = String(args.cwd ?? '').trim() || undefined
+    if (readsRequireApproval(ctx) && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'git_status', title: 'git status', summary: 'O assistente quer consultar o status do repositório (política de máxima cautela).',
+        permissions: ['execute'], resumeTool: 'git_status', resumeArgs: { ...(cwd ? { cwd } : {}) },
+      })
+    }
     const res = await callGit(ctx, 'status', { ...(cwd ? { cwd } : {}) })
     if (!res.useSidecar) { ctx.emit(shellTrailEvent('git status', '(modo demonstração)')); return { tool_message: DEMO_GIT_MESSAGE } }
     if (!res.ok) { ctx.emit(shellTrailEvent('git status', undefined, res.error)); return { tool_message: `Falha no git status: ${res.error ?? 'erro desconhecido'}` } }
@@ -790,7 +833,7 @@ const gitStatusSkill: Skill<GitStatusArgs> = {
   },
 }
 
-interface GitDiffArgs { cwd?: string; path?: string; staged?: boolean }
+interface GitDiffArgs { cwd?: string; path?: string; staged?: boolean; approved?: boolean; approval_id?: string }
 const gitDiffSkill: Skill<GitDiffArgs> = {
   name: 'git_diff',
   description: 'Mostra o diff do repositório git (alterações não comitadas, ou em staging com staged=true). Somente leitura.',
@@ -800,6 +843,12 @@ const gitDiffSkill: Skill<GitDiffArgs> = {
     if (String(args.cwd ?? '').trim()) payload.cwd = String(args.cwd).trim()
     if (String(args.path ?? '').trim()) payload.path = String(args.path).trim()
     if (args.staged === true) payload.staged = true
+    if (readsRequireApproval(ctx) && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'git_diff', title: 'git diff', summary: 'O assistente quer ver o diff do repositório (política de máxima cautela).',
+        permissions: ['execute'], resumeTool: 'git_diff', resumeArgs: { ...payload },
+      })
+    }
     const res = await callGit(ctx, 'diff', payload)
     if (!res.useSidecar) { ctx.emit(shellTrailEvent('git diff', '(modo demonstração)')); return { tool_message: DEMO_GIT_MESSAGE } }
     if (!res.ok) { ctx.emit(shellTrailEvent('git diff', undefined, res.error)); return { tool_message: `Falha no git diff: ${res.error ?? 'erro desconhecido'}` } }

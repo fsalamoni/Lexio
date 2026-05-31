@@ -288,6 +288,21 @@ COLE este token no Lexio → kJ8x...token...A2c`}</pre>
           </label>
         </div>
 
+        <label className="block">
+          <span className="text-sm font-medium text-slate-700">Política de aprovação</span>
+          <select
+            value={config.approval_policy ?? 'per_command'}
+            onChange={e => patch({ approval_policy: e.target.value as 'per_command' | 'always' })}
+            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          >
+            <option value="per_command">Por ação (padrão) — escrever/apagar/executar pedem aprovação; leituras livres</option>
+            <option value="always">Máxima cautela — toda ação pede aprovação, inclusive leituras</option>
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            Vale quando o portão "Recursos beta do Chat → Aprovação de ações no PC" (<code>FF_CHAT_PC_APPROVALS</code>) está ligado.
+          </p>
+        </label>
+
         <div className="flex items-center gap-3">
           <button
             type="button"

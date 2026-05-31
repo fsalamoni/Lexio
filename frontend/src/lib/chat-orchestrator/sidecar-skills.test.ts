@@ -73,7 +73,7 @@ describe('sidecar approval gate', () => {
     expect(createApprovalRequest).not.toHaveBeenCalled()
   })
 
-  it('read_file is never gated, even with the gate on', async () => {
+  it('read_file is not gated under the default (per_command) policy', async () => {
     setRuntimeFeatureFlags({ FF_CHAT_PC_APPROVALS: true })
     const createApprovalRequest = vi.fn()
     const ctx = makeCtx({ createApprovalRequest })
@@ -82,6 +82,19 @@ describe('sidecar approval gate', () => {
 
     expect(result.awaiting_user).toBeFalsy()
     expect(createApprovalRequest).not.toHaveBeenCalled()
+  })
+
+  it('read_file IS gated under the "always" (máxima cautela) policy', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_PC_APPROVALS: true })
+    const ctx = makeCtx({
+      createApprovalRequest: vi.fn().mockResolvedValue('r1'),
+      sidecar: { token: '', host: '127.0.0.1', port: 9420, enabled: true, approval_policy: 'always' },
+    })
+
+    const result = await skillByName('read_file').run({ path: 'out/a.txt' }, ctx)
+
+    expect(result.awaiting_user?.resume_tool).toBe('read_file')
+    expect(result.awaiting_user?.resume_args?.approved).toBe(true)
   })
 
   it('run_shell pauses for approval when the gate is on', async () => {
