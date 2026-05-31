@@ -150,7 +150,7 @@ function resolveSidecarWsUrl(ctx: SkillContext): string | null {
 /** Tipos de mensagem trocadas com o sidecar. */
 interface SidecarRequest {
   id: string
-  type: 'fs' | 'shell'
+  type: 'fs' | 'shell' | 'git'
   op: string
   payload: Record<string, unknown>
 }
@@ -748,6 +748,145 @@ const renameFileSkill: Skill<RenameFileArgs> = {
   },
 }
 
+// ── Git skills (Wave 2: FF_CHAT_PC_GIT) ───────────────────────────────────────
+
+interface GitCallResult {
+  useSidecar: boolean
+  ok: boolean
+  result?: unknown
+  error?: string
+}
+
+/** Send a `git/<op>` request to the sidecar, signalling demo mode when absent. */
+async function callGit(ctx: SkillContext, op: string, payload: Record<string, unknown>): Promise<GitCallResult> {
+  const wsUrl = resolveSidecarWsUrl(ctx)
+  const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
+  const useSidecar = sidecarOk && !ctx.mock && !!wsUrl
+  if (!useSidecar) return { useSidecar: false, ok: false }
+  const response = await callSidecar({ id: uid(), type: 'git', op, payload }, ctx.signal, wsUrl!)
+  if (!response) return { useSidecar: true, ok: false, error: 'Sidecar não respondeu.' }
+  return { useSidecar: true, ok: response.ok, result: response.result, error: response.error }
+}
+
+const DEMO_GIT_MESSAGE = '⚠️ Modo demonstração — operação git indisponível sem o sidecar @lexio/desktop em execução.'
+
+interface GitStatusArgs { cwd?: string }
+const gitStatusSkill: Skill<GitStatusArgs> = {
+  name: 'git_status',
+  description: 'Mostra o status do repositório git na pasta de trabalho do sidecar (branch, arquivos alterados, ahead/behind). Somente leitura.',
+  argsHint: { cwd: 'Subpasta do repositório (opcional)' },
+  async run(args, ctx): Promise<SkillResult> {
+    const cwd = String(args.cwd ?? '').trim() || undefined
+    const res = await callGit(ctx, 'status', { ...(cwd ? { cwd } : {}) })
+    if (!res.useSidecar) { ctx.emit(shellTrailEvent('git status', '(modo demonstração)')); return { tool_message: DEMO_GIT_MESSAGE } }
+    if (!res.ok) { ctx.emit(shellTrailEvent('git status', undefined, res.error)); return { tool_message: `Falha no git status: ${res.error ?? 'erro desconhecido'}` } }
+    const s = res.result as { branch?: string; ahead: number; behind: number; clean: boolean; files: Array<{ code: string; path: string }> }
+    ctx.emit(shellTrailEvent('git status', s.clean ? 'árvore limpa' : `${s.files.length} alteração(ões)`))
+    const head = `🌿 git status (${s.branch ?? '—'})${s.ahead ? ` ↑${s.ahead}` : ''}${s.behind ? ` ↓${s.behind}` : ''}`
+    if (s.clean) return { tool_message: `${head}\nÁrvore de trabalho limpa.` }
+    const lines = (s.files ?? []).slice(0, 80).map(f => `${f.code} ${f.path}`).join('\n')
+    return { tool_message: `${head}:\n\`\`\`\n${lines}\n\`\`\`` }
+  },
+}
+
+interface GitDiffArgs { cwd?: string; path?: string; staged?: boolean }
+const gitDiffSkill: Skill<GitDiffArgs> = {
+  name: 'git_diff',
+  description: 'Mostra o diff do repositório git (alterações não comitadas, ou em staging com staged=true). Somente leitura.',
+  argsHint: { cwd: 'Subpasta do repositório (opcional)', path: 'Limitar a um arquivo (opcional)', staged: 'true para o diff em staging' },
+  async run(args, ctx): Promise<SkillResult> {
+    const payload: Record<string, unknown> = {}
+    if (String(args.cwd ?? '').trim()) payload.cwd = String(args.cwd).trim()
+    if (String(args.path ?? '').trim()) payload.path = String(args.path).trim()
+    if (args.staged === true) payload.staged = true
+    const res = await callGit(ctx, 'diff', payload)
+    if (!res.useSidecar) { ctx.emit(shellTrailEvent('git diff', '(modo demonstração)')); return { tool_message: DEMO_GIT_MESSAGE } }
+    if (!res.ok) { ctx.emit(shellTrailEvent('git diff', undefined, res.error)); return { tool_message: `Falha no git diff: ${res.error ?? 'erro desconhecido'}` } }
+    const d = res.result as { diff: string; truncated?: boolean }
+    ctx.emit(shellTrailEvent('git diff', `${d.diff.length} chars`))
+    if (!d.diff.trim()) return { tool_message: '🔍 git diff: sem alterações.' }
+    return { tool_message: `🔍 git diff${d.truncated ? ' (truncado)' : ''}:\n\`\`\`diff\n${d.diff.slice(0, 6000)}\n\`\`\`` }
+  },
+}
+
+interface GitCommitArgs { message?: string; add_all?: boolean; cwd?: string; approved?: boolean; approval_id?: string }
+const gitCommitSkill: Skill<GitCommitArgs> = {
+  name: 'git_commit',
+  description: 'Cria um commit git na pasta de trabalho do sidecar. Exige aprovação do usuário quando a aprovação de ações no PC está ativa.',
+  argsHint: { message: 'Mensagem do commit', add_all: 'true para "git add -A" antes do commit', cwd: 'Subpasta do repositório (opcional)' },
+  async run(args, ctx): Promise<SkillResult> {
+    const message = String(args.message ?? '').trim()
+    if (!message) return { tool_message: 'Erro: "message" é obrigatório.' }
+    const cwd = String(args.cwd ?? '').trim() || undefined
+    if (approvalGateActive() && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'git_commit',
+        title: `git commit: ${clipAudit(message, 80)}`,
+        summary: `O assistente quer criar um commit${args.add_all ? ' (após git add -A)' : ''} com a mensagem "${message}".`,
+        permissions: ['execute'],
+        resumeTool: 'git_commit',
+        resumeArgs: { message, ...(args.add_all ? { add_all: true } : {}), ...(cwd ? { cwd } : {}) },
+      })
+    }
+    const res = await callGit(ctx, 'commit', { message, add_all: args.add_all === true, ...(cwd ? { cwd } : {}) })
+    if (!res.useSidecar) { ctx.emit(shellTrailEvent('git commit', '(modo demonstração)')); return { tool_message: DEMO_GIT_MESSAGE } }
+    if (!res.ok) {
+      ctx.emit(shellTrailEvent('git commit', undefined, res.error))
+      await auditSafe(ctx, { operation: 'git_commit', actor: 'sidecar', status: 'failed', approval_id: args.approval_id, message: res.error })
+      return { tool_message: `Falha no git commit: ${res.error ?? 'erro desconhecido'}` }
+    }
+    const c = res.result as { committed: boolean; output: string }
+    ctx.emit(shellTrailEvent('git commit', c.committed ? 'commit criado' : 'nada a comitar'))
+    await auditSafe(ctx, { operation: 'git_commit', actor: 'sidecar', status: 'executed', approval_id: args.approval_id, message: clipAudit(message, 80) })
+    return { tool_message: `✅ git commit:\n\`\`\`\n${c.output.slice(0, 2000)}\n\`\`\`` }
+  },
+}
+
+interface GitRemoteArgs { remote?: string; branch?: string; cwd?: string; approved?: boolean; approval_id?: string }
+
+function buildGitRemoteSkill(op: 'pull' | 'push'): Skill<GitRemoteArgs> {
+  const isPush = op === 'push'
+  return {
+    name: `git_${op}`,
+    description: `Executa git ${op} na pasta de trabalho do sidecar. Exige aprovação do usuário quando a aprovação de ações no PC está ativa.`,
+    argsHint: { remote: 'Nome do remoto (ex.: origin)', branch: 'Branch (opcional)', cwd: 'Subpasta do repositório (opcional)' },
+    async run(args, ctx): Promise<SkillResult> {
+      const remote = String(args.remote ?? '').trim() || undefined
+      const branch = String(args.branch ?? '').trim() || undefined
+      const cwd = String(args.cwd ?? '').trim() || undefined
+      if (approvalGateActive() && args.approved !== true) {
+        return requestSidecarApproval(ctx, {
+          op: isPush ? 'git_push' : 'git_pull',
+          title: `git ${op}${remote ? ` ${remote}` : ''}${branch ? ` ${branch}` : ''}`,
+          summary: `O assistente quer executar git ${op}${remote ? ` para "${remote}"` : ''}${branch ? ` (branch ${branch})` : ''} no seu repositório local.`,
+          permissions: ['execute', 'network'],
+          resumeTool: `git_${op}`,
+          resumeArgs: { ...(remote ? { remote } : {}), ...(branch ? { branch } : {}), ...(cwd ? { cwd } : {}) },
+        })
+      }
+      const res = await callGit(ctx, op, { ...(remote ? { remote } : {}), ...(branch ? { branch } : {}), ...(cwd ? { cwd } : {}) })
+      if (!res.useSidecar) { ctx.emit(shellTrailEvent(`git ${op}`, '(modo demonstração)')); return { tool_message: DEMO_GIT_MESSAGE } }
+      if (!res.ok) {
+        ctx.emit(shellTrailEvent(`git ${op}`, undefined, res.error))
+        await auditSafe(ctx, { operation: `git_${op}`, actor: 'sidecar', status: 'failed', approval_id: args.approval_id, message: res.error })
+        return { tool_message: `Falha no git ${op}: ${res.error ?? 'erro desconhecido'}` }
+      }
+      const r = res.result as { ok: boolean; output: string }
+      ctx.emit(shellTrailEvent(`git ${op}`, r.ok ? 'concluído' : 'com avisos'))
+      await auditSafe(ctx, { operation: `git_${op}`, actor: 'sidecar', status: 'executed', approval_id: args.approval_id, message: `git ${op}` })
+      return { tool_message: `${isPush ? '⬆️' : '⬇️'} git ${op}:\n\`\`\`\n${r.output.slice(0, 2000)}\n\`\`\`` }
+    },
+  }
+}
+
+const gitPullSkill = buildGitRemoteSkill('pull')
+const gitPushSkill = buildGitRemoteSkill('push')
+
+/** Git skills exposed only when `FF_CHAT_PC_GIT` is on. */
+export function buildGitSkills(): Skill[] {
+  return [gitStatusSkill, gitDiffSkill, gitCommitSkill, gitPullSkill, gitPushSkill]
+}
+
 // ── Utility ───────────────────────────────────────────────────────────────────
 
 function formatBytes(bytes: number): string {
@@ -769,6 +908,9 @@ export function buildSidecarSkills(): Skill[] {
   const base: Skill[] = [readFileSkill, listDirSkill, writeFileSkill, shellSkill]
   if (approvalGateActive()) {
     base.push(deleteFileSkill, renameFileSkill)
+  }
+  if (isEnabled('FF_CHAT_PC_GIT')) {
+    base.push(...buildGitSkills())
   }
   return base
 }

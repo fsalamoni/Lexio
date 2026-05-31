@@ -66,8 +66,15 @@ export const CHAT_V2_TOOL_CATALOG: ChatV2ToolMeta[] = [
   // ── Ações no PC (sidecar @lexio/desktop) ──
   { name: 'read_file', label: 'Ler arquivo (PC)', description: 'Lê o conteúdo de um arquivo no PC do usuário via sidecar.', category: 'pc' },
   { name: 'list_directory', label: 'Listar diretório (PC)', description: 'Lista o conteúdo de um diretório no PC do usuário via sidecar.', category: 'pc' },
-  { name: 'write_file', label: 'Escrever arquivo (PC)', description: 'Escreve conteúdo em um arquivo no PC do usuário via sidecar.', category: 'pc' },
-  { name: 'run_shell', label: 'Executar comando (PC)', description: 'Executa um comando de shell no PC do usuário via sidecar (com bloqueio de comandos destrutivos).', category: 'pc' },
+  { name: 'write_file', label: 'Escrever arquivo (PC)', description: 'Escreve conteúdo em um arquivo no PC do usuário via sidecar. Pede aprovação quando o portão de ações no PC está ativo.', category: 'pc' },
+  { name: 'run_shell', label: 'Executar comando (PC)', description: 'Executa um comando de shell no PC do usuário via sidecar (com bloqueio de comandos destrutivos). Pede aprovação quando o portão de ações no PC está ativo.', category: 'pc' },
+  { name: 'delete_file', label: 'Apagar arquivo (PC)', description: 'Apaga um arquivo (ou pasta vazia) no PC via sidecar. Só disponível com o portão de aprovação ativo; sempre pede confirmação.', category: 'pc' },
+  { name: 'rename_file', label: 'Renomear/mover arquivo (PC)', description: 'Renomeia ou move um arquivo no PC via sidecar. Só disponível com o portão de aprovação ativo; sempre pede confirmação.', category: 'pc' },
+  { name: 'git_status', label: 'git status (PC)', description: 'Mostra o status do repositório git na pasta do sidecar. Somente leitura.', category: 'pc' },
+  { name: 'git_diff', label: 'git diff (PC)', description: 'Mostra alterações não comitadas do repositório git na pasta do sidecar. Somente leitura.', category: 'pc' },
+  { name: 'git_commit', label: 'git commit (PC)', description: 'Cria um commit no repositório git da pasta do sidecar. Pede aprovação quando o portão de ações no PC está ativo.', category: 'pc' },
+  { name: 'git_pull', label: 'git pull (PC)', description: 'Executa git pull no repositório da pasta do sidecar. Pede aprovação quando o portão de ações no PC está ativo.', category: 'pc' },
+  { name: 'git_push', label: 'git push (PC)', description: 'Executa git push no repositório da pasta do sidecar. Pede aprovação quando o portão de ações no PC está ativo.', category: 'pc' },
 ]
 
 export const CHAT_V2_TOOL_NAMES: string[] = CHAT_V2_TOOL_CATALOG.map(t => t.name)

@@ -107,4 +107,33 @@ describe('sidecar skill exposure', () => {
     expect(on).toContain('delete_file')
     expect(on).toContain('rename_file')
   })
+
+  it('exposes git skills only when FF_CHAT_PC_GIT is on', () => {
+    clearRuntimeFeatureFlags()
+    expect(buildSidecarSkills().map(s => s.name)).not.toContain('git_status')
+
+    setRuntimeFeatureFlags({ FF_CHAT_PC_GIT: true })
+    expect(buildSidecarSkills().map(s => s.name)).toEqual(
+      expect.arrayContaining(['git_status', 'git_diff', 'git_commit', 'git_pull', 'git_push']),
+    )
+  })
+})
+
+describe('git skills', () => {
+  it('git_status is read-only (no approval) and reports demo without a sidecar', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_PC_GIT: true, FF_CHAT_PC_APPROVALS: true })
+    const createApprovalRequest = vi.fn()
+    const result = await skillByName('git_status').run({}, makeCtx({ createApprovalRequest }))
+    expect(result.awaiting_user).toBeFalsy()
+    expect(createApprovalRequest).not.toHaveBeenCalled()
+  })
+
+  it('git_commit pauses for approval when the gate is on', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_PC_GIT: true, FF_CHAT_PC_APPROVALS: true })
+    const ctx = makeCtx({ createApprovalRequest: vi.fn().mockResolvedValue('a3') })
+    const result = await skillByName('git_commit').run({ message: 'wip', add_all: true }, ctx)
+    expect(result.awaiting_user?.resume_tool).toBe('git_commit')
+    expect(result.awaiting_user?.resume_args?.approved).toBe(true)
+    expect(result.awaiting_user?.resume_args?.message).toBe('wip')
+  })
 })

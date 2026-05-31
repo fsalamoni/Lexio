@@ -22,6 +22,7 @@ import {
   assertPermission,
   SandboxError,
 } from './sandbox.mjs'
+import { gitStatus, gitDiff, gitCommit, gitPull, gitPush } from './git.mjs'
 
 const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB read/write ceiling
 const SHELL_MAX_TIMEOUT_SEC = 30
@@ -78,6 +79,10 @@ export function createHandler(config) {
 
     if (type === 'shell' && op === 'exec') {
       return runShell(payload)
+    }
+
+    if (type === 'git') {
+      return runGitOp(op, payload)
     }
 
     throw new SandboxError(`Operação não suportada: ${type}/${op}`, 'UNSUPPORTED_OP')
@@ -181,6 +186,19 @@ export function createHandler(config) {
     await fs.mkdir(path.dirname(to), { recursive: true })
     await fs.rename(from, to)
     return { from, to, moved: true }
+  }
+
+  async function runGitOp(op, payload = {}) {
+    assertPermission(permissions, 'execute')
+    const cwd = payload.cwd ? resolveInsideRoot(root, payload.cwd) : root
+    switch (op) {
+      case 'status': return gitStatus(cwd)
+      case 'diff': return gitDiff(cwd, payload)
+      case 'commit': return gitCommit(cwd, payload)
+      case 'pull': return gitPull(cwd, payload)
+      case 'push': return gitPush(cwd, payload)
+      default: throw new SandboxError(`Operação git não suportada: ${op}`, 'UNSUPPORTED_OP')
+    }
   }
 
   function runShell(payload) {
