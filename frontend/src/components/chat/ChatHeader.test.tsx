@@ -38,7 +38,7 @@ describe('ChatHeader', () => {
     )
 
     expect(screen.getByRole('heading', { name: 'Conversa estratégica' })).toBeTruthy()
-    expect(screen.getByText(/16 agentes configuráveis/i)).toBeTruthy()
+    expect(screen.getByText(/16 agentes/i)).toBeTruthy()
     expect(screen.getByText(/lotes paralelos/i)).toBeTruthy()
     expect(screen.getByText(/sidecar offline/i)).toBeTruthy()
     expect(screen.getByRole('button', { name: /buscar/i })).toBeTruthy()

@@ -254,7 +254,7 @@ export default function ConversationList({ activeId, onSelect }: ConversationLis
                     </button>
                   )}
                   {!isRenaming && item.id && (
-                    <div className="hidden items-center gap-1 group-hover:flex">
+                    <div className="flex items-center gap-1 lg:hidden lg:group-hover:flex">
                       {convoTools && (
                         <button
                           type="button"
