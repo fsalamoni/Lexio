@@ -17,6 +17,7 @@
 
 import { callLLMWithFallback, type LLMResult } from './llm-client'
 import { formatCostBadge } from './currency-utils'
+import { isEnabled } from './feature-flags'
 import {
   buildPipelineFallbackResolver,
   loadFallbackPriorityConfig,
@@ -82,10 +83,20 @@ export interface StudioPipelineInput {
   legalArea?: string
 }
 
+export interface StudioCriticVerdict {
+  score: number
+  reasons: string[]
+  should_stop: boolean
+}
+
 export interface StudioPipelineResult {
   content: string
   /** Execution records for each pipeline step */
   executions: StudioStepExecution[]
+  /** Critic verdict when the quality gate (FF_NOTEBOOK_STUDIO_QUALITY_GATE) ran. */
+  quality?: StudioCriticVerdict
+  /** Number of writing/revision iterations (1, or 2 when the gate forced a revision). */
+  iterations?: number
 }
 
 export interface StudioVisualMediaResult {
@@ -501,6 +512,85 @@ ${draft}
 
 Revise e aprimore este ${input.artifactLabel}, retornando a versão FINAL completa.`,
   }
+}
+
+// ── Quality gate (FF_NOTEBOOK_STUDIO_QUALITY_GATE) ───────────────────────────
+
+/** Per-artifact acceptance score; falls back to 75. Legal/long-form is stricter. */
+const STUDIO_CRITIC_THRESHOLDS: Partial<Record<StudioArtifactType, number>> = {
+  documento: 82,
+  relatorio: 80,
+  guia_estruturado: 78,
+  resumo: 76,
+  apresentacao_v2: 82,
+  apresentacao: 78,
+}
+
+export function studioCriticThreshold(artifactType: StudioArtifactType): number {
+  return STUDIO_CRITIC_THRESHOLDS[artifactType] ?? 75
+}
+
+/**
+ * Domain/material-aware critic prompt. Mirrors the v4/chat critic: returns a
+ * strict JSON verdict so the pipeline can decide whether to force one revision.
+ */
+function buildStudioCriticPrompt(input: StudioPipelineInput, content: string): { system: string; user: string } {
+  const isStructured = isStructuredArtifactType(input.artifactType)
+  const materialRule = isStructured
+    ? '- O conteúdo DEVE ser JSON válido e completo no schema do tipo (arrays com o mínimo de itens, sem campos vazios). JSON inválido/incompleto = score < 50.'
+    : '- O conteúdo deve cumprir de fato o tipo solicitado, com densidade real (sem texto genérico/superficial).'
+  return {
+    system: `Você é um crítico de qualidade rigoroso de artefatos. Avalie o artefato e responda APENAS com JSON válido no formato:
+{"score": <0-100>, "reasons": [<motivos curtos e acionáveis>], "should_stop": <true|false>}
+
+Regras:
+${materialRule}
+- "should_stop" só pode ser true quando o artefato está pronto para entrega (completo, correto e no formato certo).
+- Seja específico nos "reasons": diga o que falta para subir o score.`,
+    user: `Tipo: ${input.artifactLabel}
+Tema: "${input.topic}"
+${input.description ? `Objetivo: ${input.description}` : ''}
+
+ARTEFATO PARA AVALIAR:
+${content.slice(0, 14000)}`,
+  }
+}
+
+/** Revision prompt that feeds the critic's reasons back to the reviewer. */
+function buildStudioRevisionPrompt(input: StudioPipelineInput, draft: string, reasons: string[]): { system: string; user: string } {
+  const base = buildReviewPrompt(input, draft)
+  const feedback = reasons.length
+    ? `\n\nO crítico de qualidade apontou os seguintes pontos a corrigir OBRIGATORIAMENTE:\n${reasons.map(r => `- ${r}`).join('\n')}`
+    : ''
+  return { system: base.system, user: `${base.user}${feedback}` }
+}
+
+export function parseStudioCriticVerdict(raw: string): StudioCriticVerdict {
+  const cleaned = String(raw ?? '')
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim()
+  const tryParse = (text: string): StudioCriticVerdict | null => {
+    try {
+      const obj = JSON.parse(text) as Record<string, unknown>
+      if (!obj || typeof obj !== 'object') return null
+      const score = Number(obj.score)
+      return {
+        score: Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : 0,
+        reasons: Array.isArray(obj.reasons) ? obj.reasons.map(r => String(r)).slice(0, 8) : [],
+        should_stop: Boolean(obj.should_stop),
+      }
+    } catch {
+      return null
+    }
+  }
+  const direct = tryParse(cleaned)
+  if (direct) return direct
+  const match = cleaned.match(/\{[\s\S]*\}/)
+  const fromMatch = match ? tryParse(match[0]) : null
+  if (fromMatch) return fromMatch
+  // Unparseable verdict: don't block delivery, but flag it for a revision.
+  return { score: 0, reasons: ['Veredito do crítico não pôde ser interpretado.'], should_stop: false }
 }
 
 // ── Specialist instructions per artifact type ────────────────────────────────
@@ -1062,9 +1152,63 @@ export async function runStudioPipeline(
   executions.push(buildStudioExecution(`studio_revisor_${input.artifactType}`, 'Revisor de Qualidade', reviewResult))
   onProgress?.(3, 3, 'Revisão de qualidade concluída.', buildStudioProgressMeta(reviewResult))
 
+  let finalContent = reviewResult.content
+  let quality: StudioCriticVerdict | undefined
+  let iterations = 1
+
+  // ── Optional blocking quality gate (critic + one revision) ──────────────
+  if (isEnabled('FF_NOTEBOOK_STUDIO_QUALITY_GATE')) {
+    try {
+      throwIfAborted(signal)
+      await sleep(800, signal)
+      onProgress?.(3, 3, 'Avaliando qualidade…', { executionState: 'running' })
+      const criticPrompt = buildStudioCriticPrompt(input, finalContent)
+      const criticResult = await callLLMWithFallback(
+        input.apiKey,
+        criticPrompt.system,
+        criticPrompt.user,
+        models.studio_revisor,
+        resolveFb('studio_revisor', models.studio_revisor),
+        1500,
+        0.1,
+        { signal },
+      )
+      executions.push(buildStudioExecution(`studio_critic_${input.artifactType}`, 'Crítico de Qualidade', criticResult))
+      quality = parseStudioCriticVerdict(criticResult.content)
+      const threshold = studioCriticThreshold(input.artifactType)
+      onProgress?.(3, 3, `Crítico: ${quality.score}/${threshold}`, buildStudioProgressMeta(criticResult))
+
+      if (!quality.should_stop && quality.score < threshold) {
+        throwIfAborted(signal)
+        await sleep(800, signal)
+        onProgress?.(3, 3, `Refinando (score ${quality.score} < ${threshold})…`, { executionState: 'running' })
+        const revisionPrompt = buildStudioRevisionPrompt(input, finalContent, quality.reasons)
+        const revisionResult = await callLLMWithFallback(
+          input.apiKey,
+          revisionPrompt.system,
+          revisionPrompt.user,
+          models.studio_revisor,
+          resolveFb('studio_revisor', models.studio_revisor),
+          10000,
+          0.2,
+          { signal },
+        )
+        executions.push(buildStudioExecution(`studio_revisor_revisao_${input.artifactType}`, 'Revisor (revisão guiada)', revisionResult))
+        if (revisionResult.content.trim()) finalContent = revisionResult.content
+        iterations = 2
+        onProgress?.(3, 3, 'Revisão guiada concluída.', buildStudioProgressMeta(revisionResult))
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      // Best-effort: keep the reviewed content if the critic/revision fails.
+    }
+  }
+
   return {
-    content: reviewResult.content,
+    content: finalContent,
     executions,
+    ...(quality ? { quality } : {}),
+    iterations,
   }
 }
 

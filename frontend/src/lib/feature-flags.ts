@@ -248,6 +248,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_CHAT_GOOGLE',
     devToggleable: true,
   },
+  {
+    key: 'FF_NOTEBOOK_STUDIO_QUALITY_GATE',
+    label: 'Caderno: Gate de qualidade no Estúdio',
+    description: 'Após a revisão, um crítico avalia o artefato (score 0-100); se ficar abaixo do limiar do tipo, força uma rodada de revisão guiada antes de entregar.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_NOTEBOOK_STUDIO_QUALITY_GATE',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────
