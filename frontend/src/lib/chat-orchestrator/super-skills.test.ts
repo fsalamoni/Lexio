@@ -40,6 +40,12 @@ vi.mock('../artifact-parsers', () => ({
 
 vi.mock('../notebook-studio-pipeline', () => ({
   runStudioPipeline: (...args: unknown[]) => runStudioPipelineMock(...args),
+  // The skill now dispatches through the flag-gated wrapper; route it to the same mock.
+  runStudioPipelineWithFlag: (...args: unknown[]) => runStudioPipelineMock(...args),
+  studioGenerationMetaPatch: (result: unknown) => {
+    const meta = (result as { generation_meta?: unknown } | null | undefined)?.generation_meta
+    return meta ? { generation_meta: meta } : {}
+  },
 }))
 
 vi.mock('../audio-generation-pipeline', () => ({

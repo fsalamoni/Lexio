@@ -48,6 +48,9 @@ import type {
   PresentationV2Deck,
   NotebookResearchAuditEntry,
 } from '../../lib/firestore-types'
+// Type-only import: erased at build time, so it does NOT pull the heavy studio
+// pipeline into this chunk (it stays lazy-loaded via loadStudioPipelineRuntime).
+import type { StudioPipelineResult } from '../../lib/notebook-studio-pipeline'
 import { humanizeError } from '../../lib/error-humanizer'
 import {
   sanitizePresentationV2ArtifactsForFirestore,
@@ -2271,7 +2274,7 @@ export default function ResearchNotebookV2() {
               ? await loadPresentationGenerationRuntime().then(({ runPresentationGenerationPipeline }) => runPresentationGenerationPipeline(pipelineInput, onProgress))
               : artifactType === 'apresentacao_v2'
                 ? await loadPresentationV2GenerationRuntime().then(({ runPresentationGenerationPipelineV2 }) => runPresentationGenerationPipelineV2(pipelineInput, onProgress))
-              : await loadStudioPipelineRuntime().then(({ runStudioPipeline }) => runStudioPipeline(pipelineInput, onProgress))
+              : await loadStudioPipelineRuntime().then(({ runStudioPipelineWithFlag }) => runStudioPipelineWithFlag(pipelineInput, onProgress))
 
           const artifact: StudioArtifact = {
             id: generateId(),
@@ -2280,6 +2283,9 @@ export default function ResearchNotebookV2() {
             content: result.content,
             format: isStructuredArtifactType(artifactType) ? 'json' : 'markdown',
             created_at: new Date().toISOString(),
+            ...((result as Partial<StudioPipelineResult>).generation_meta
+              ? { generation_meta: (result as StudioPipelineResult).generation_meta }
+              : {}),
           }
 
           onTaskProgress({
