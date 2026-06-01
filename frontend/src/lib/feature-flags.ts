@@ -272,6 +272,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_NOTEBOOK_STUDIO_V2',
     devToggleable: true,
   },
+  {
+    key: 'FF_NOTEBOOK_STUDIO_VIDEO',
+    label: 'Caderno: vídeo real no roteiro de vídeo',
+    description: 'Ao gerar um roteiro de vídeo (video_script), produz o MP4 via provedor de vídeo externo (VITE_EXTERNAL_VIDEO_PROVIDER) e o persiste, injetando renderedVideoUrl para reprodução. Requer provedor configurado; best-effort.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_NOTEBOOK_STUDIO_VIDEO',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────
