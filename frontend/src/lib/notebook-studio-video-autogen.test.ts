@@ -8,15 +8,30 @@ import type { StudioArtifact } from './firestore-types'
 
 const isExternalVideoProviderConfiguredMock = vi.fn()
 const requestExternalVideoClipMock = vi.fn()
+const requestFalVideoClipMock = vi.fn()
 const uploadNotebookVideoArtifactMock = vi.fn()
+const loadVideoPipelineModelsMock = vi.fn()
+const resolveProviderCallMock = vi.fn()
 
 vi.mock('./external-video-provider', () => ({
   isExternalVideoProviderConfigured: () => isExternalVideoProviderConfiguredMock(),
   requestExternalVideoClip: (...args: unknown[]) => requestExternalVideoClipMock(...args),
+  requestFalVideoClip: (...args: unknown[]) => requestFalVideoClipMock(...args),
+  resolveFalVideoModelVariant: (model: string) => model, // identity for tests
 }))
 
 vi.mock('./notebook-media-storage', () => ({
   uploadNotebookVideoArtifact: (...args: unknown[]) => uploadNotebookVideoArtifactMock(...args),
+}))
+
+vi.mock('./model-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./model-config')>()),
+  loadVideoPipelineModels: () => loadVideoPipelineModelsMock(),
+}))
+
+vi.mock('./provider-credentials', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./provider-credentials')>()),
+  resolveProviderCall: (...args: unknown[]) => resolveProviderCallMock(...args),
 }))
 
 function videoScript(extra: Record<string, unknown> = {}): StudioArtifact {
@@ -43,7 +58,11 @@ describe('maybeAutoGenerateVideoFromScript', () => {
     clearRuntimeFeatureFlags()
     isExternalVideoProviderConfiguredMock.mockReturnValue(true)
     requestExternalVideoClipMock.mockResolvedValue({ url: 'https://provider.example/clip.mp4', mimeType: 'video/mp4', provider: 'acme' })
+    requestFalVideoClipMock.mockResolvedValue({ url: 'https://fal.example/clip.mp4', mimeType: 'video/mp4', provider: 'fal' })
     uploadNotebookVideoArtifactMock.mockResolvedValue({ url: 'https://storage.example/v.mp4', path: 'notebooks/n1/v.mp4' })
+    // Default: no fal model configured → external (env) provider path.
+    loadVideoPipelineModelsMock.mockResolvedValue({ video_clip_generator: '' })
+    resolveProviderCallMock.mockRejectedValue(new Error('no key'))
     // fetch → ok blob (durable upload path)
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob(['x'], { type: 'video/mp4' }) })))
   })
@@ -75,6 +94,49 @@ describe('maybeAutoGenerateVideoFromScript', () => {
     const prompt = requestExternalVideoClipMock.mock.calls[0][0].prompt as string
     expect(prompt).toContain('responsabilidade civil')
     expect(prompt).toContain('Cena 1')
+  })
+
+  it('uses fal.ai with the user key when video_clip_generator resolves to the fal provider (recommended path)', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    loadVideoPipelineModelsMock.mockResolvedValue({ video_clip_generator: 'fal-ai/veo3' })
+    resolveProviderCallMock.mockResolvedValue({ provider: { id: 'fal' }, apiKey: 'fal-key', baseUrl: 'https://queue.fal.run' })
+    const sink: UsageExecutionRecord[] = []
+    const result = await maybeAutoGenerateVideoFromScript(videoScript(), 'uid', 'n1', sink)
+
+    expect(requestFalVideoClipMock).toHaveBeenCalledOnce()
+    expect(requestExternalVideoClipMock).not.toHaveBeenCalled() // fal short-circuits the env provider
+    expect(JSON.parse(result.content).renderedVideoUrl).toBe('https://storage.example/v.mp4')
+    expect(sink[0].provider_label).toBe('fal')
+    expect(sink[0].model).toBe('fal-ai/veo3') // the configured video model is recorded
+  })
+
+  it('falls back to the env provider when the fal key is missing (resolveProviderCall throws)', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    loadVideoPipelineModelsMock.mockResolvedValue({ video_clip_generator: 'fal-ai/veo3' })
+    resolveProviderCallMock.mockRejectedValue(new Error('Chave de API ausente'))
+    const result = await maybeAutoGenerateVideoFromScript(videoScript(), 'uid', 'n1')
+    expect(requestFalVideoClipMock).not.toHaveBeenCalled()
+    expect(requestExternalVideoClipMock).toHaveBeenCalledOnce()
+    expect(JSON.parse(result.content).renderedVideoUrl).toBe('https://storage.example/v.mp4')
+  })
+
+  it('captures the provider-reported cost into the usage record when present', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    requestExternalVideoClipMock.mockResolvedValue({ url: 'https://provider.example/clip.mp4', mimeType: 'video/mp4', provider: 'acme', costUsd: 0.42 })
+    const sink: UsageExecutionRecord[] = []
+    await maybeAutoGenerateVideoFromScript(videoScript(), 'uid', 'n1', sink)
+    expect(sink[0].cost_usd).toBe(0.42)
+  })
+
+  it('is a no-op when neither fal nor the env provider is available', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    isExternalVideoProviderConfiguredMock.mockReturnValue(false)
+    loadVideoPipelineModelsMock.mockResolvedValue({ video_clip_generator: '' })
+    const art = videoScript()
+    const result = await maybeAutoGenerateVideoFromScript(art, 'uid', 'n1')
+    expect(result).toBe(art)
+    expect(requestFalVideoClipMock).not.toHaveBeenCalled()
+    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
   })
 
   it('emits a media_video_render usage record into the sink (for Usos e Custos / Admin)', async () => {

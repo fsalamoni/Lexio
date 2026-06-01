@@ -87,13 +87,79 @@ function buildVideoPromptFromScript(parsed: Record<string, unknown>, title: stri
   return typeof summary === 'string' && summary.trim() ? summary.trim().slice(0, 1500) : (title || 'Vídeo')
 }
 
+interface ResolvedVideoClip {
+  url: string
+  mimeType?: string
+  provider: string
+  /** Video model id used, when resolved from the pipeline config (fal path). */
+  model?: string
+  /** Provider-reported price, when available. */
+  costUsd?: number
+}
+
 /**
- * Auto-render the MP4 for a `video_script` artifact (FF_NOTEBOOK_STUDIO_VIDEO)
- * via the external video provider (VITE_EXTERNAL_VIDEO_PROVIDER), persisting it
- * and injecting `renderedVideoUrl` into the content so the viewer plays it.
- * Mirrors the chat's generate_video, scoped to the env-configured external
- * provider (fal.ai-key generation stays in the chat). Best-effort: any failure
- * or missing/unconfigured provider returns the original artifact unchanged.
+ * Resolves a video clip for a prompt with full parity to the chat's
+ * generate_video: (1) fal.ai with the user's own key — the recommended path,
+ * using the model configured for the `video_clip_generator` agent of the video
+ * pipeline; (2) the operator's external env provider. Returns `null` when
+ * neither is available (best-effort). Mirrors the resolution used by the video
+ * pipeline (`generateClipViaFal`) and the chat, without coupling to either.
+ */
+async function resolveNotebookVideoClip(prompt: string, uid: string): Promise<ResolvedVideoClip | null> {
+  const {
+    isExternalVideoProviderConfigured,
+    requestExternalVideoClip,
+    requestFalVideoClip,
+    resolveFalVideoModelVariant,
+  } = await import('./external-video-provider')
+
+  // The clip model comes from the same agent the video pipeline uses, so the
+  // user configures fal.ai in exactly one place (Pipeline de Vídeo → Gerador de
+  // Clipes de Vídeo). Absent/failed config simply skips the fal path.
+  let videoModel = ''
+  try {
+    const { loadVideoPipelineModels } = await import('./model-config')
+    const models = await loadVideoPipelineModels()
+    videoModel = (models.video_clip_generator || '').trim()
+  } catch {
+    videoModel = ''
+  }
+
+  // (1) fal.ai with the user's own key (recommended).
+  if (videoModel) {
+    try {
+      const { resolveProviderCall } = await import('./provider-credentials')
+      const resolved = await resolveProviderCall(videoModel, uid)
+      if (resolved.provider.id === 'fal') {
+        const clip = await requestFalVideoClip({
+          apiKey: resolved.apiKey,
+          baseUrl: resolved.baseUrl,
+          model: resolveFalVideoModelVariant(videoModel, 'text'),
+          prompt,
+          aspectRatio: '16:9',
+        })
+        if (clip?.url) return { url: clip.url, mimeType: clip.mimeType, provider: clip.provider, model: videoModel, costUsd: clip.costUsd }
+      }
+    } catch {
+      // Missing/disabled fal key or non-fal provider — fall back to env provider.
+    }
+  }
+
+  // (2) Operator's external env provider.
+  if (isExternalVideoProviderConfigured()) {
+    const clip = await requestExternalVideoClip({ prompt, durationSeconds: 8, aspectRatio: '16:9', model: videoModel || undefined })
+    if (clip?.url) return { url: clip.url, mimeType: clip.mimeType, provider: clip.provider, model: videoModel || undefined, costUsd: clip.costUsd }
+  }
+
+  return null
+}
+
+/**
+ * Auto-render the MP4 for a `video_script` artifact (FF_NOTEBOOK_STUDIO_VIDEO),
+ * persisting it and injecting `renderedVideoUrl` into the content so the viewer
+ * plays it. Full parity with the chat's generate_video: fal.ai with the user's
+ * own key (recommended) or the operator's external env provider. Best-effort:
+ * any failure or no available provider returns the original artifact unchanged.
  *
  * Exported for direct unit testing of the wiring (the provider call itself is
  * mocked in tests and validated end-to-end by the operator's real provider).
@@ -116,11 +182,9 @@ export async function maybeAutoGenerateVideoFromScript(
   if (typeof parsed.renderedVideoUrl === 'string' && parsed.renderedVideoUrl.trim()) return artifact // already rendered
   try {
     const startedAt = Date.now()
-    const { isExternalVideoProviderConfigured, requestExternalVideoClip } = await import('./external-video-provider')
-    if (!isExternalVideoProviderConfigured()) return artifact // no env provider here — best-effort
     const prompt = buildVideoPromptFromScript(parsed, artifact.title || '')
-    const clip = await requestExternalVideoClip({ prompt, durationSeconds: 8, aspectRatio: '16:9' })
-    if (!clip?.url) return artifact
+    const clip = await resolveNotebookVideoClip(prompt, uid)
+    if (!clip?.url) return artifact // no provider available — best-effort
 
     // Persist to our Storage for a durable URL; keep the provider URL on failure.
     let videoUrl = clip.url
@@ -141,16 +205,17 @@ export async function maybeAutoGenerateVideoFromScript(
     }
 
     // Record a usage marker so the video render surfaces in Usos e Custos /
-    // Admin (cost_usd unknown for media → 0, mirroring the chat's generate_video).
+    // Admin. cost_usd uses the provider-reported price when available, else 0
+    // (mirroring the chat's generate_video for providers without pricing).
     executionSink?.push(createUsageExecutionRecord({
       source_type: 'video_pipeline',
       source_id: notebookId,
       phase: 'media_video_render',
       agent_name: 'Gerador de Vídeo (Estúdio)',
-      model: clip.provider || 'external-video-provider',
+      model: clip.model || clip.provider || 'external-video-provider',
       provider_id: clip.provider ?? null,
       provider_label: clip.provider ?? null,
-      cost_usd: 0,
+      cost_usd: clip.costUsd ?? 0,
       duration_ms: Date.now() - startedAt,
       execution_state: 'completed',
     }))
