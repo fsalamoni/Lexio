@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import clsx from 'clsx'
 import ChatHeader from '../components/chat/ChatHeader'
 import Composer from '../components/chat/Composer'
 import ConversationList from '../components/chat/ConversationList'
@@ -28,13 +29,18 @@ export default function Chat() {
   const conversationId = params.get('id')
   const [activeId, setActiveId] = useState<string | null>(conversationId)
   const [showSearch, setShowSearch] = useState(false)
+  // Mobile single-pane navigation: 'list' shows the conversation list,
+  // 'chat' shows the active conversation. Ignored at lg+ (both panes visible).
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>(conversationId ? 'chat' : 'list')
 
   useEffect(() => {
     setActiveId(conversationId)
+    if (conversationId) setMobileView('chat')
   }, [conversationId])
 
   const handleSelectConversation = (id: string) => {
     setActiveId(id)
+    setMobileView('chat')
     const next = new URLSearchParams(params)
     next.set('id', id)
     setParams(next, { replace: true })
@@ -60,20 +66,31 @@ export default function Chat() {
   )
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col">
-      <div
-        className={`grid flex-1 overflow-hidden ${
-          showSearch ? 'lg:grid-cols-[280px_1fr_380px]' : 'lg:grid-cols-[280px_1fr]'
-        }`}
-      >
-        <ConversationList activeId={activeId} onSelect={handleSelectConversation} />
-        <div className="flex flex-col overflow-hidden min-h-0">
+    <div className="flex h-[calc(100dvh-5.5rem)] flex-col lg:h-[calc(100vh-3rem)]">
+      <div className="flex flex-1 overflow-hidden">
+        {/* Conversation list — full width on mobile (list view), fixed column at lg */}
+        <div
+          className={clsx(
+            'min-h-0 w-full overflow-hidden lg:block lg:w-[280px] lg:shrink-0',
+            mobileView === 'list' ? 'block' : 'hidden',
+          )}
+        >
+          <ConversationList activeId={activeId} onSelect={handleSelectConversation} />
+        </div>
+        {/* Chat column — hidden on mobile while the list is showing */}
+        <div
+          className={clsx(
+            'min-h-0 flex-1 flex-col overflow-hidden',
+            mobileView === 'chat' ? 'flex' : 'hidden lg:flex',
+          )}
+        >
           <ChatHeader
             conversation={state.conversation}
             effort={state.effort}
             onChangeEffort={setEffort}
             busy={busy}
             onCancel={cancel}
+            onBack={() => setMobileView('list')}
             onToggleSearch={() => setShowSearch(s => !s)}
             showSearch={showSearch}
             onExport={
@@ -122,10 +139,12 @@ export default function Chat() {
           )}
         </div>
         {showSearch && (
-          <SearchPanel
-            onClose={() => setShowSearch(false)}
-            onAttachToContext={activeId ? handleAttachToContext : undefined}
-          />
+          <div className="fixed inset-0 z-40 bg-white lg:static lg:z-auto lg:block lg:w-[380px] lg:shrink-0">
+            <SearchPanel
+              onClose={() => setShowSearch(false)}
+              onAttachToContext={activeId ? handleAttachToContext : undefined}
+            />
+          </div>
         )}
       </div>
     </div>
