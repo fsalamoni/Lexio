@@ -4,6 +4,53 @@ import type { StudioArtifact, StudioArtifactType } from './firestore-types'
 import type { StudioStepExecution } from './notebook-studio-pipeline'
 import { sanitizePresentationV2ArtifactsForFirestore } from './presentation-v2-persistence'
 import { materializeStudioArtifactExports } from './chat-artifact-exporters'
+import { isEnabled } from './feature-flags'
+
+/**
+ * Auto-synthesize the MP3 for an `audio_script` artifact (FF_NOTEBOOK_AUDIO_AUTO_TTS)
+ * and persist it to storage, injecting `audioUrl` into the content so the viewer
+ * plays it and the materializer/export buttons expose a real .mp3. Best-effort:
+ * any failure returns the original artifact (the user can still synthesize
+ * manually). Resolves the API key from the user so no call-site change is needed.
+ */
+async function maybeAutoSynthesizeAudioScript(
+  artifact: StudioArtifact,
+  uid: string,
+  notebookId: string,
+): Promise<StudioArtifact> {
+  if (artifact.type !== 'audio_script' || !isEnabled('FF_NOTEBOOK_AUDIO_AUTO_TTS')) return artifact
+  let parsed: Record<string, unknown>
+  try {
+    const value = JSON.parse(artifact.content) as unknown
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return artifact
+    parsed = value as Record<string, unknown>
+  } catch {
+    return artifact
+  }
+  if (typeof parsed.audioUrl === 'string' && parsed.audioUrl.trim()) return artifact // already has audio
+  try {
+    const [{ getOpenRouterKey }, { synthesizeAudioFromScript }, { uploadNotebookMediaArtifact }] = await Promise.all([
+      import('./generation-service'),
+      import('./notebook-audio-pipeline'),
+      import('./notebook-media-storage'),
+    ])
+    const apiKey = await getOpenRouterKey(uid)
+    if (!apiKey) return artifact
+    const result = await synthesizeAudioFromScript({ apiKey, rawScriptContent: artifact.content })
+    if (!result.audioBlob) return artifact
+    const stored = await uploadNotebookMediaArtifact(uid, notebookId, artifact.title || 'Áudio', result.audioBlob, 'audios', '.mp3')
+    return {
+      ...artifact,
+      content: JSON.stringify({ ...parsed, audioUrl: stored.url }),
+      download_url: stored.url,
+      storage_path: stored.path,
+      mime_type: result.mimeType || 'audio/mpeg',
+      extension: '.mp3',
+    }
+  } catch {
+    return artifact
+  }
+}
 
 const ARTIFACT_COST_KEY: Partial<Record<StudioArtifactType, UsageFunctionKey>> = {
   video_script: 'video_pipeline',
@@ -37,7 +84,8 @@ export async function materializeStudioArtifactForNotebook({
   notebookId,
   artifact,
 }: MaterializeStudioArtifactForNotebookInput): Promise<StudioArtifact> {
-  const materializedArtifact = await materializeStudioArtifactExports(artifact, { userId: uid, notebookId })
+  const withAudio = await maybeAutoSynthesizeAudioScript(artifact, uid, notebookId)
+  const materializedArtifact = await materializeStudioArtifactExports(withAudio, { userId: uid, notebookId })
   return sanitizePresentationV2ArtifactsForFirestore([materializedArtifact])[0] ?? materializedArtifact
 }
 
@@ -98,7 +146,8 @@ export async function materializeExistingStudioArtifactExports({
     throw new Error(`Artefato ${artifactId} não encontrado no caderno ${notebookId}.`)
   }
 
-  const materializedArtifact = await materializeStudioArtifactExports(existingArtifact, { userId: uid, notebookId })
+  const withAudio = await maybeAutoSynthesizeAudioScript(existingArtifact, uid, notebookId)
+  const materializedArtifact = await materializeStudioArtifactExports(withAudio, { userId: uid, notebookId })
   const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore((notebook.artifacts ?? []).map(candidate => (
     candidate.id === artifactId ? materializedArtifact : candidate
   )))
