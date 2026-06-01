@@ -256,6 +256,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_NOTEBOOK_STUDIO_QUALITY_GATE',
     devToggleable: true,
   },
+  {
+    key: 'FF_NOTEBOOK_AUDIO_AUTO_TTS',
+    label: 'Caderno: TTS automático no áudio',
+    description: 'Ao gerar um roteiro de áudio (audio_script), sintetiza o MP3 automaticamente via TTS e o persiste no storage, em vez de exigir ação manual.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_NOTEBOOK_AUDIO_AUTO_TTS',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────
