@@ -101,6 +101,17 @@ listar/ler arquivos do Drive e buscar/ler e-mails; criar rascunho no Gmail pede 
 > (página inicial pública sem login, nome do app, propriedade do domínio, política de
 > privacidade) só é exigida para liberar o conector a **usuários externos** em produção.
 
+> 🛡️ **Isolar o conector num projeto Google Cloud dedicado (recomendado se o projeto tem
+> outros apps).** O status "Teste/Produção" da tela de consentimento é **do projeto inteiro** e
+> vale para **todos** os OAuth clients dele — logo, pôr o projeto em "Teste" pode restringir
+> outros apps que pedem escopos sensíveis (Drive/Gmail/Agenda). Apps que usam só "Entrar com
+> Google" (nome/e‑mail/perfil) **não** são afetados. Para garantir zero impacto: crie um
+> **projeto novo** só pro conector → habilite **Drive API + Gmail API** → tela de consentimento
+> **Externo/Teste** + você como **usuário de teste** → crie um **OAuth Client ID (Web)** com a
+> origem do seu domínio → cole esse Client ID em `/settings` → Conector Google. O Client ID é
+> só de UI (salvo no Firestore do usuário), então **não há mudança de código nem deploy**. O
+> login do próprio Lexio (Firebase Auth) continua no projeto original, intocado.
+
 ---
 
 ## 5. Validação E2E (depois de ligar as flags)
