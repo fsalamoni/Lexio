@@ -52,6 +52,89 @@ async function maybeAutoSynthesizeAudioScript(
   }
 }
 
+/** Best-effort prompt from a video_script JSON: title + a few scenes' text. */
+function buildVideoPromptFromScript(parsed: Record<string, unknown>, title: string): string {
+  const parts: string[] = []
+  if (title.trim()) parts.push(title.trim())
+  const scenes = Array.isArray(parsed.scenes) ? parsed.scenes : []
+  for (const scene of scenes.slice(0, 6)) {
+    if (scene && typeof scene === 'object') {
+      for (const key of ['description', 'visual', 'visual_description', 'narration', 'text']) {
+        const value = (scene as Record<string, unknown>)[key]
+        if (typeof value === 'string' && value.trim()) parts.push(value.trim())
+      }
+    }
+  }
+  const prompt = parts.join('. ').slice(0, 1500)
+  if (prompt) return prompt
+  const summary = parsed.summary
+  return typeof summary === 'string' && summary.trim() ? summary.trim().slice(0, 1500) : (title || 'Vídeo')
+}
+
+/**
+ * Auto-render the MP4 for a `video_script` artifact (FF_NOTEBOOK_STUDIO_VIDEO)
+ * via the external video provider (VITE_EXTERNAL_VIDEO_PROVIDER), persisting it
+ * and injecting `renderedVideoUrl` into the content so the viewer plays it.
+ * Mirrors the chat's generate_video, scoped to the env-configured external
+ * provider (fal.ai-key generation stays in the chat). Best-effort: any failure
+ * or missing/unconfigured provider returns the original artifact unchanged.
+ *
+ * Exported for direct unit testing of the wiring (the provider call itself is
+ * mocked in tests and validated end-to-end by the operator's real provider).
+ */
+export async function maybeAutoGenerateVideoFromScript(
+  artifact: StudioArtifact,
+  uid: string,
+  notebookId: string,
+): Promise<StudioArtifact> {
+  if (artifact.type !== 'video_script' || !isEnabled('FF_NOTEBOOK_STUDIO_VIDEO')) return artifact
+  let parsed: Record<string, unknown>
+  try {
+    const value = JSON.parse(artifact.content) as unknown
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return artifact
+    parsed = value as Record<string, unknown>
+  } catch {
+    return artifact
+  }
+  if (typeof parsed.renderedVideoUrl === 'string' && parsed.renderedVideoUrl.trim()) return artifact // already rendered
+  try {
+    const { isExternalVideoProviderConfigured, requestExternalVideoClip } = await import('./external-video-provider')
+    if (!isExternalVideoProviderConfigured()) return artifact // no env provider here — best-effort
+    const prompt = buildVideoPromptFromScript(parsed, artifact.title || '')
+    const clip = await requestExternalVideoClip({ prompt, durationSeconds: 8, aspectRatio: '16:9' })
+    if (!clip?.url) return artifact
+
+    // Persist to our Storage for a durable URL; keep the provider URL on failure.
+    let videoUrl = clip.url
+    let storagePath: string | undefined
+    try {
+      const response = await fetch(clip.url)
+      if (response.ok) {
+        const blob = await response.blob()
+        const { uploadNotebookVideoArtifact } = await import('./notebook-media-storage')
+        const stored = await uploadNotebookVideoArtifact(uid, notebookId, artifact.title || 'Vídeo', blob)
+        if (stored.url) {
+          videoUrl = stored.url
+          storagePath = stored.path
+        }
+      }
+    } catch {
+      // Provider URL kept as-is — still a real, playable video.
+    }
+
+    return {
+      ...artifact,
+      content: JSON.stringify({ ...parsed, renderedVideoUrl: videoUrl }),
+      download_url: videoUrl,
+      ...(storagePath ? { storage_path: storagePath } : {}),
+      mime_type: clip.mimeType || 'video/mp4',
+      extension: '.mp4',
+    }
+  } catch {
+    return artifact
+  }
+}
+
 const ARTIFACT_COST_KEY: Partial<Record<StudioArtifactType, UsageFunctionKey>> = {
   video_script: 'video_pipeline',
   video_production: 'video_pipeline',
@@ -85,7 +168,8 @@ export async function materializeStudioArtifactForNotebook({
   artifact,
 }: MaterializeStudioArtifactForNotebookInput): Promise<StudioArtifact> {
   const withAudio = await maybeAutoSynthesizeAudioScript(artifact, uid, notebookId)
-  const materializedArtifact = await materializeStudioArtifactExports(withAudio, { userId: uid, notebookId })
+  const withMedia = await maybeAutoGenerateVideoFromScript(withAudio, uid, notebookId)
+  const materializedArtifact = await materializeStudioArtifactExports(withMedia, { userId: uid, notebookId })
   return sanitizePresentationV2ArtifactsForFirestore([materializedArtifact])[0] ?? materializedArtifact
 }
 
@@ -147,7 +231,8 @@ export async function materializeExistingStudioArtifactExports({
   }
 
   const withAudio = await maybeAutoSynthesizeAudioScript(existingArtifact, uid, notebookId)
-  const materializedArtifact = await materializeStudioArtifactExports(withAudio, { userId: uid, notebookId })
+  const withMedia = await maybeAutoGenerateVideoFromScript(withAudio, uid, notebookId)
+  const materializedArtifact = await materializeStudioArtifactExports(withMedia, { userId: uid, notebookId })
   const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore((notebook.artifacts ?? []).map(candidate => (
     candidate.id === artifactId ? materializedArtifact : candidate
   )))

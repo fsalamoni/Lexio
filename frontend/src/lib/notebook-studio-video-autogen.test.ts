@@ -1,0 +1,120 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { maybeAutoGenerateVideoFromScript } from './notebook-studio-artifact-persistence'
+import { clearRuntimeFeatureFlags, setRuntimeFeatureFlags } from './feature-flags'
+import type { StudioArtifact } from './firestore-types'
+
+// ── Mocks ───────────────────────────────────────────────────────────────────
+
+const isExternalVideoProviderConfiguredMock = vi.fn()
+const requestExternalVideoClipMock = vi.fn()
+const uploadNotebookVideoArtifactMock = vi.fn()
+
+vi.mock('./external-video-provider', () => ({
+  isExternalVideoProviderConfigured: () => isExternalVideoProviderConfiguredMock(),
+  requestExternalVideoClip: (...args: unknown[]) => requestExternalVideoClipMock(...args),
+}))
+
+vi.mock('./notebook-media-storage', () => ({
+  uploadNotebookVideoArtifact: (...args: unknown[]) => uploadNotebookVideoArtifactMock(...args),
+}))
+
+function videoScript(extra: Record<string, unknown> = {}): StudioArtifact {
+  return {
+    id: 'art-1',
+    type: 'video_script',
+    title: 'Vídeo sobre responsabilidade civil',
+    content: JSON.stringify({
+      summary: 'Resumo do vídeo',
+      scenes: [
+        { description: 'Cena 1: abertura', narration: 'Olá' },
+        { description: 'Cena 2: desenvolvimento', visual: 'gráfico' },
+      ],
+      ...extra,
+    }),
+    format: 'json',
+    created_at: new Date().toISOString(),
+  }
+}
+
+describe('maybeAutoGenerateVideoFromScript', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    clearRuntimeFeatureFlags()
+    isExternalVideoProviderConfiguredMock.mockReturnValue(true)
+    requestExternalVideoClipMock.mockResolvedValue({ url: 'https://provider.example/clip.mp4', mimeType: 'video/mp4', provider: 'acme' })
+    uploadNotebookVideoArtifactMock.mockResolvedValue({ url: 'https://storage.example/v.mp4', path: 'notebooks/n1/v.mp4' })
+    // fetch → ok blob (durable upload path)
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob(['x'], { type: 'video/mp4' }) })))
+  })
+  afterEach(() => {
+    clearRuntimeFeatureFlags()
+    vi.unstubAllGlobals()
+  })
+
+  it('returns the artifact unchanged when the flag is off (default)', async () => {
+    const art = videoScript()
+    const result = await maybeAutoGenerateVideoFromScript(art, 'uid', 'n1')
+    expect(result).toBe(art)
+    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+  })
+
+  it('renders + persists the MP4 and injects renderedVideoUrl when flag on and provider configured', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    const result = await maybeAutoGenerateVideoFromScript(videoScript(), 'uid', 'n1')
+
+    expect(requestExternalVideoClipMock).toHaveBeenCalledOnce()
+    const parsed = JSON.parse(result.content)
+    expect(parsed.renderedVideoUrl).toBe('https://storage.example/v.mp4') // durable storage url
+    expect(result.download_url).toBe('https://storage.example/v.mp4')
+    expect(result.storage_path).toBe('notebooks/n1/v.mp4')
+    expect(result.mime_type).toBe('video/mp4')
+    expect(result.extension).toBe('.mp4')
+
+    // prompt was built from title + scene text
+    const prompt = requestExternalVideoClipMock.mock.calls[0][0].prompt as string
+    expect(prompt).toContain('responsabilidade civil')
+    expect(prompt).toContain('Cena 1')
+  })
+
+  it('keeps the provider URL when the durable upload fetch fails', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('CORS') }))
+    const result = await maybeAutoGenerateVideoFromScript(videoScript(), 'uid', 'n1')
+    const parsed = JSON.parse(result.content)
+    expect(parsed.renderedVideoUrl).toBe('https://provider.example/clip.mp4')
+    expect(uploadNotebookVideoArtifactMock).not.toHaveBeenCalled()
+  })
+
+  it('is a no-op when the provider is not configured (best-effort)', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    isExternalVideoProviderConfiguredMock.mockReturnValue(false)
+    const art = videoScript()
+    const result = await maybeAutoGenerateVideoFromScript(art, 'uid', 'n1')
+    expect(result).toBe(art)
+    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+  })
+
+  it('skips when the script already has a renderedVideoUrl', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    const art = videoScript({ renderedVideoUrl: 'https://existing.example/v.mp4' })
+    const result = await maybeAutoGenerateVideoFromScript(art, 'uid', 'n1')
+    expect(result).toBe(art)
+    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+  })
+
+  it('only applies to video_script artifacts', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    const art = { ...videoScript(), type: 'resumo' as StudioArtifact['type'] }
+    const result = await maybeAutoGenerateVideoFromScript(art, 'uid', 'n1')
+    expect(result).toBe(art)
+    expect(requestExternalVideoClipMock).not.toHaveBeenCalled()
+  })
+
+  it('returns unchanged when the provider yields no url', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    requestExternalVideoClipMock.mockResolvedValue(null)
+    const art = videoScript()
+    const result = await maybeAutoGenerateVideoFromScript(art, 'uid', 'n1')
+    expect(result).toBe(art)
+  })
+})
