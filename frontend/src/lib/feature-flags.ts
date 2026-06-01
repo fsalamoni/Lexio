@@ -264,6 +264,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     envVar: 'VITE_FF_NOTEBOOK_AUDIO_AUTO_TTS',
     devToggleable: true,
   },
+  {
+    key: 'FF_NOTEBOOK_STUDIO_V2',
+    label: 'Caderno: Estúdio v2 (motor de refino iterativo)',
+    description: 'Substitui o pipeline fixo de 3 etapas por um motor que refina o artefato em loop (rascunho → crítica → revisão) até atingir o limiar de qualidade, limitado por nº de iterações e teto de custo. Espelha o motor de documentos v4.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_NOTEBOOK_STUDIO_V2',
+    devToggleable: true,
+  },
 ]
 
 // ── Storage key ───────────────────────────────────────────────────────────────

@@ -1212,6 +1212,275 @@ export async function runStudioPipeline(
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Studio v2 — bounded critic-driven refinement motor (FF_NOTEBOOK_STUDIO_V2)
+//
+// Mirrors the proven document-v4 motor: per-iteration caps + soft USD cost cap +
+// generation_meta + per-user config + an injectable LLM call for deterministic
+// tests. Reuses the v3 prompt builders so artifact quality stays consistent — the
+// difference is an iterative refinement loop instead of a fixed 3-step pass:
+//   research → draft → [critique → revise]*  until the critic clears the per-type
+//   threshold / says stop, or the iteration / soft cost cap is hit.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Absolute safety cap on writing passes, regardless of user config. */
+const STUDIO_V2_HARD_MAX_ITERATIONS = 6
+
+export interface StudioV2Settings {
+  /** Max writing passes (1 draft + up to maxIterations-1 revisions). Clamped to [1, 6]. */
+  maxIterations: number
+  /** Soft USD ceiling: once exceeded, the loop stops after the current pass. */
+  costCapUsd: number
+  /** Overrides the per-artifact-type acceptance score when set. */
+  criticThreshold?: number
+  /** Overrides studio_revisor as the critic model when set. */
+  criticModel?: string
+}
+
+export const DEFAULT_STUDIO_V2_SETTINGS: StudioV2Settings = {
+  maxIterations: 3,
+  costCapUsd: 2.5,
+}
+
+export type StudioV2StopReason = 'should_stop' | 'threshold_met' | 'max_iterations' | 'cost_cap'
+
+export interface StudioGenerationMeta {
+  pipeline_version: 'studio_v2'
+  /** Writing passes performed (initial draft + revisions). */
+  iterations: number
+  /** Critic evaluations performed. */
+  critic_rounds: number
+  /** Critic score per round, in order. */
+  scores: number[]
+  final_score: number | null
+  critic_threshold: number
+  max_iterations: number
+  soft_cost_cap_usd: number
+  total_cost_usd: number
+  wall_clock_ms: number
+  stop_reason: StudioV2StopReason
+  /** True when the loop stopped below threshold because a cap (iteration/cost) was hit. */
+  forced_submission: boolean
+}
+
+export interface StudioPipelineV2Result extends StudioPipelineResult {
+  generation_meta: StudioGenerationMeta
+}
+
+export type StudioV2LlmCall = (params: {
+  phase: 'research' | 'draft' | 'critic' | 'revision'
+  system: string
+  user: string
+  model: string
+  fallbackModels: readonly string[]
+  maxTokens: number
+  temperature: number
+  signal?: AbortSignal
+}) => Promise<LLMResult>
+
+export interface RunStudioPipelineV2Options {
+  signal?: AbortSignal
+  /** Partial overrides merged over DEFAULT_STUDIO_V2_SETTINGS. */
+  settings?: Partial<StudioV2Settings>
+  /** Inject the model map (skips Firestore load + validation). Used by tests. */
+  models?: ResearchNotebookModelMap
+  /** Inject the fallback resolver (skips Firestore load). */
+  fallbackResolver?: (agentKey: string, model: string) => string[]
+  /** Replace the real LLM call. When provided, network/Firestore validation is skipped. Used by tests. */
+  llmCall?: StudioV2LlmCall
+}
+
+function defaultStudioV2Call(apiKey: string): StudioV2LlmCall {
+  return ({ system, user, model, fallbackModels, maxTokens, temperature, signal }) =>
+    callLLMWithFallback(apiKey, system, user, model, fallbackModels, maxTokens, temperature, { signal })
+}
+
+/**
+ * Studio v2 motor. Returns the same StudioPipelineResult contract (drop-in for
+ * runStudioPipeline) plus generation_meta. Behind FF_NOTEBOOK_STUDIO_V2 at the
+ * call sites; never throws on critic/parse hiccups — parseStudioCriticVerdict is
+ * resilient and the loop always terminates via one of the four stop reasons.
+ */
+export async function runStudioPipelineV2(
+  input: StudioPipelineInput,
+  onProgress?: StudioProgressCallback,
+  options?: RunStudioPipelineV2Options,
+): Promise<StudioPipelineV2Result> {
+  const signal = options?.signal
+  throwIfAborted(signal)
+
+  const settings: StudioV2Settings = { ...DEFAULT_STUDIO_V2_SETTINGS, ...(options?.settings ?? {}) }
+  const maxIterations = Math.min(STUDIO_V2_HARD_MAX_ITERATIONS, Math.max(1, Math.floor(settings.maxIterations)))
+  const costCapUsd = settings.costCapUsd > 0 ? settings.costCapUsd : DEFAULT_STUDIO_V2_SETTINGS.costCapUsd
+  const threshold = settings.criticThreshold ?? studioCriticThreshold(input.artifactType)
+
+  const testMode = Boolean(options?.llmCall)
+  const models: ResearchNotebookModelMap = options?.models ?? await loadResearchNotebookModels(input.uid)
+  const resolveFb =
+    options?.fallbackResolver ??
+    buildPipelineFallbackResolver(
+      RESEARCH_NOTEBOOK_AGENT_DEFS,
+      testMode ? {} : await loadFallbackPriorityConfig(input.uid).catch(() => ({})),
+    )
+  const specialistRole = ARTIFACT_AGENT_MAP[input.artifactType] ?? 'studio_escritor'
+  const criticModel = settings.criticModel || models.studio_revisor
+
+  if (!testMode) {
+    const requiredAgents = [
+      { key: 'studio_pesquisador', label: 'Pesquisador do Estúdio' },
+      { key: specialistRole, label: SPECIALIST_LABELS[specialistRole] },
+      { key: 'studio_revisor', label: 'Revisor de Qualidade' },
+    ]
+    const missing = requiredAgents.filter(a => !models[a.key])
+    if (missing.length > 0) {
+      throw new Error(
+        `Agente(s) sem modelo configurado: ${missing.map(a => a.label).join(', ')}. ` +
+        'Vá em Configurações > Caderno de Pesquisa e selecione modelos para todos os agentes do estúdio.',
+      )
+    }
+    await validateScopedAgentModels('research_notebook_models', {
+      studio_pesquisador: models.studio_pesquisador,
+      [specialistRole]: models[specialistRole],
+      studio_revisor: models.studio_revisor,
+    })
+  }
+
+  const call: StudioV2LlmCall = options?.llmCall ?? defaultStudioV2Call(input.apiKey)
+  const pause = (ms: number) => (testMode ? Promise.resolve() : sleep(ms, signal))
+
+  const executions: StudioStepExecution[] = []
+  const scores: number[] = []
+  const wallClockStart = Date.now()
+  const totalStepsEstimate = 2 + maxIterations * 2
+  let totalCostUsd = 0
+
+  const record = (phase: string, label: string, result: LLMResult) => {
+    executions.push(buildStudioExecution(phase, label, result))
+    totalCostUsd += result.cost_usd ?? 0
+  }
+
+  // ── Research ──────────────────────────────────────────────────────────────
+  throwIfAborted(signal)
+  onProgress?.(1, totalStepsEstimate, 'Pesquisando e organizando fontes…', { executionState: 'running' })
+  const researchPrompt = buildResearchPrompt(input)
+  const researchResult = await call({
+    phase: 'research',
+    system: researchPrompt.system,
+    user: researchPrompt.user,
+    model: models.studio_pesquisador,
+    fallbackModels: resolveFb('studio_pesquisador', models.studio_pesquisador),
+    maxTokens: 4000,
+    temperature: 0.2,
+    signal,
+  })
+  record(`studio_pesquisador_${input.artifactType}`, 'Pesquisador do Estúdio', researchResult)
+  onProgress?.(1, totalStepsEstimate, 'Pesquisa concluída.', buildStudioProgressMeta(researchResult))
+  await pause(800)
+
+  // ── Initial draft ───────────────────────────────────────────────────────────
+  throwIfAborted(signal)
+  onProgress?.(2, totalStepsEstimate, `${SPECIALIST_LABELS[specialistRole]} criando conteúdo…`, { executionState: 'running' })
+  const draftPrompt = buildSpecialistPrompt(input, researchResult.content, specialistRole)
+  const draftResult = await call({
+    phase: 'draft',
+    system: draftPrompt.system,
+    user: draftPrompt.user,
+    model: models[specialistRole],
+    fallbackModels: resolveFb(specialistRole, models[specialistRole]),
+    maxTokens: 8000,
+    temperature: 0.4,
+    signal,
+  })
+  record(`${specialistRole}_${input.artifactType}`, SPECIALIST_LABELS[specialistRole], draftResult)
+  let content = draftResult.content
+  let writingPasses = 1
+  onProgress?.(2, totalStepsEstimate, `${SPECIALIST_LABELS[specialistRole]} concluiu a primeira versão.`, buildStudioProgressMeta(draftResult))
+
+  // ── Critic-driven refinement loop ────────────────────────────────────────────
+  let verdict: StudioCriticVerdict | undefined
+  let criticRounds = 0
+  let stopReason: StudioV2StopReason = 'threshold_met'
+  let forcedSubmission = false
+
+  for (;;) {
+    throwIfAborted(signal)
+    // Budget exhausted before we could (re)critique → stop with current content.
+    if (totalCostUsd >= costCapUsd) {
+      stopReason = 'cost_cap'
+      forcedSubmission = !verdict || verdict.score < threshold
+      break
+    }
+
+    await pause(600)
+    onProgress?.(2 + criticRounds * 2 + 1, totalStepsEstimate, `Avaliando qualidade (rodada ${criticRounds + 1})…`, { executionState: 'running' })
+    const criticPrompt = buildStudioCriticPrompt(input, content)
+    const criticResult = await call({
+      phase: 'critic',
+      system: criticPrompt.system,
+      user: criticPrompt.user,
+      model: criticModel,
+      fallbackModels: resolveFb('studio_revisor', criticModel),
+      maxTokens: 1500,
+      temperature: 0.1,
+      signal,
+    })
+    record(`studio_critic_${input.artifactType}_r${criticRounds + 1}`, 'Crítico de Qualidade', criticResult)
+    verdict = parseStudioCriticVerdict(criticResult.content)
+    scores.push(verdict.score)
+    criticRounds++
+    onProgress?.(2 + criticRounds * 2, totalStepsEstimate, `Crítico: ${verdict.score}/${threshold}`, buildStudioProgressMeta(criticResult))
+
+    if (verdict.should_stop) { stopReason = 'should_stop'; break }
+    if (verdict.score >= threshold) { stopReason = 'threshold_met'; break }
+    if (writingPasses >= maxIterations) { stopReason = 'max_iterations'; forcedSubmission = true; break }
+    if (totalCostUsd >= costCapUsd) { stopReason = 'cost_cap'; forcedSubmission = true; break }
+
+    // ── Guided revision ──────────────────────────────────────────────────────
+    throwIfAborted(signal)
+    await pause(600)
+    onProgress?.(2 + criticRounds * 2 + 1, totalStepsEstimate, `Refinando (score ${verdict.score} < ${threshold})…`, { executionState: 'running' })
+    const revisionPrompt = buildStudioRevisionPrompt(input, content, verdict.reasons)
+    const revisionResult = await call({
+      phase: 'revision',
+      system: revisionPrompt.system,
+      user: revisionPrompt.user,
+      model: models.studio_revisor,
+      fallbackModels: resolveFb('studio_revisor', models.studio_revisor),
+      maxTokens: 10000,
+      temperature: 0.2,
+      signal,
+    })
+    record(`studio_revisor_r${writingPasses}_${input.artifactType}`, `Revisor (revisão ${writingPasses})`, revisionResult)
+    if (revisionResult.content.trim()) content = revisionResult.content
+    writingPasses++
+  }
+
+  const generation_meta: StudioGenerationMeta = {
+    pipeline_version: 'studio_v2',
+    iterations: writingPasses,
+    critic_rounds: criticRounds,
+    scores,
+    final_score: verdict ? verdict.score : null,
+    critic_threshold: threshold,
+    max_iterations: maxIterations,
+    soft_cost_cap_usd: costCapUsd,
+    total_cost_usd: Number(totalCostUsd.toFixed(6)),
+    wall_clock_ms: Date.now() - wallClockStart,
+    stop_reason: stopReason,
+    forced_submission: forcedSubmission,
+  }
+
+  onProgress?.(totalStepsEstimate, totalStepsEstimate, 'Geração concluída.', { executionState: 'completed' })
+
+  return {
+    content,
+    executions,
+    ...(verdict ? { quality: verdict } : {}),
+    iterations: writingPasses,
+    generation_meta,
+  }
+}
+
 export async function generateStructuredVisualArtifactMedia(
   artifactType: StudioArtifactType,
   rawContent: string,
