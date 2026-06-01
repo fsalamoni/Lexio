@@ -76,8 +76,9 @@ padrão (opcional) → **"Testar conexão"**. Com `FF_CHAT_PC_GIT` ligado e o si
    (apps não verificados permitem até 100 usuários de teste — suficiente para uso próprio).
    Escopos: `drive.readonly`, `gmail.readonly`, `gmail.compose`.
 4. **Credenciais → Criar credenciais → ID do cliente OAuth → Aplicativo da Web.**
-   - **Origens JavaScript autorizadas:** `https://lexio.web.app`,
-     `https://fsalamoni.github.io`, `http://localhost:3000`.
+   - **Origens JavaScript autorizadas:** `https://lexio.protagonistarpg.com.br`
+     (domínio próprio), `https://lexio.web.app`, `https://fsalamoni.github.io`,
+     `http://localhost:3000`. Inclua **todas** as origens onde o app é servido.
    - Copie o **Client ID** (`...apps.googleusercontent.com`).
 
 **Onde colar:** `/settings` → **"Conector Google"** → cole o **Client ID** → **"Conectar"**
