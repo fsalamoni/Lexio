@@ -1,49 +1,30 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 title Lexio - Pasta local (PC)
-
-REM ============================================================================
-REM  Lexio - Atalho de 1 clique (Windows) para o agente local @lexio/desktop.
-REM
-REM  COMO USAR: basta dar DUPLO-CLIQUE neste arquivo. Ele instala o necessario
-REM  na primeira vez e liga o programa. Deixe a janela ABERTA enquanto usar o
-REM  chat; copie o token que aparecer e cole no Lexio em
-REM  Configuracoes -> Pasta local (PC).
-REM ============================================================================
-
-REM ---- Configuracao (edite estas duas linhas se quiser) ----------------------
-REM ROOT = a pasta que o Lexio podera ler/escrever (a "sandbox").
-set "ROOT=%USERPROFILE%\Lexio"
-REM PERMISSIONS = read,write (seguro). Acrescente ,execute para permitir rodar
-REM comandos (run_shell). Ex.: read,write,execute
-set "PERMISSIONS=read,write"
-REM ----------------------------------------------------------------------------
-
 cd /d "%~dp0"
 
-where node >nul 2>nul
-if errorlevel 1 (
-  echo.
-  echo  [X] Node.js nao encontrado neste computador.
-  echo      1. Abra https://nodejs.org/
-  echo      2. Baixe e instale a versao "LTS".
-  echo      3. Feche e abra este atalho de novo.
-  echo.
-  pause
-  exit /b 1
-)
+REM ==========================================================================
+REM  Lexio - Atalho de 1 clique (Windows) para o agente local @lexio/desktop.
+REM  Requer Node.js instalado. Se a empresa bloqueia instalar o Node, use o
+REM  pacote com Node EMBUTIDO em packages/desktop/installer/.
+REM  Deixe a janela ABERTA; copie o token e cole no Lexio em
+REM  Configuracoes -> Pasta local (PC).
+REM ==========================================================================
 
-if not exist "node_modules\ws\" (
-  echo.
-  echo  Preparando na primeira vez (baixando 1 componente, ~20s)...
-  call npm install --silent
-  if errorlevel 1 (
-    echo.
-    echo  [X] Nao consegui instalar o componente. Verifique sua internet e tente de novo.
-    pause
-    exit /b 1
-  )
-)
+set "ROOT=%USERPROFILE%\Lexio"
+REM read,write (seguro). Para permitir rodar comandos: read,write,execute
+set "PERMISSIONS=read,write"
+
+where node >nul 2>nul
+if errorlevel 1 goto nonode
+
+if exist "node_modules\ws\" goto run
+echo  Preparando na primeira vez (baixando 1 componente, ~20s)...
+call npm install --silent
+if not exist "node_modules\ws\" goto noinstall
+
+:run
+if not exist "%ROOT%" mkdir "%ROOT%" 2>nul
 
 echo.
 echo  ============================================================
@@ -52,14 +33,33 @@ echo  ============================================================
 echo   Pasta de trabalho : %ROOT%
 echo   Permissoes        : %PERMISSIONS%
 echo.
-echo   ^>^> DEIXE ESTA JANELA ABERTA enquanto usar o chat.
-echo      Para revogar o acesso, feche a janela ou tecle Ctrl+C.
+echo   Deixe esta janela ABERTA enquanto usar o chat.
 echo  ============================================================
 echo.
 
 node "bin\lexio-desktop.mjs" --root "%ROOT%" --permissions "%PERMISSIONS%"
-
+set "RC=%ERRORLEVEL%"
 echo.
-echo  Agente encerrado. O Lexio nao tem mais acesso a este PC.
+echo  Agente encerrado (codigo %RC%). O Lexio nao tem mais acesso a este PC.
+echo.
 pause
+goto end
+
+:nonode
+echo.
+echo  [X] Node.js nao encontrado neste computador.
+echo      Instale a versao LTS em https://nodejs.org/ e abra de novo,
+echo      OU use o pacote com Node embutido (pasta installer).
+echo.
+pause
+goto end
+
+:noinstall
+echo.
+echo  [X] Nao consegui instalar o componente 'ws'. Verifique a internet.
+echo.
+pause
+goto end
+
+:end
 endlocal

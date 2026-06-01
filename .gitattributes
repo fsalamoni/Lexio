@@ -13,3 +13,13 @@ Teses/**/*.deleted filter=lfs diff=lfs merge=lfs -text
 
 # Catch-all for any other large binary files in Qdrant storage
 Teses/**/*.bk filter=lfs diff=lfs merge=lfs -text
+
+# Windows batch launchers MUST keep CRLF endings, or cmd.exe fails to run them.
+# Mark as -text so git never normalizes them to LF (in clones or ZIP/archive exports).
+*.cmd -text
+*.bat -text
+# Unix launchers must keep LF endings.
+*.command text eol=lf
+*.sh text eol=lf
+# Zipped installers are binary.
+*.zip binary
