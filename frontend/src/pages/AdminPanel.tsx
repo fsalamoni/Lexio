@@ -41,6 +41,7 @@ import ChatOrchestratorConfigCard from '../components/ChatOrchestratorConfigCard
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
 import DocumentV4PipelineConfigCard from '../components/admin/DocumentV4PipelineConfigCard'
 import DocumentV4ToolsConfigCard from '../components/admin/DocumentV4ToolsConfigCard'
+import StudioV2ConfigCard from '../components/admin/StudioV2ConfigCard'
 import ChatOrchestratorV2ConfigCard from '../components/admin/ChatOrchestratorV2ConfigCard'
 import ChatOrchestratorV2ToolsConfigCard from '../components/admin/ChatOrchestratorV2ToolsConfigCard'
 import SidecarConnectionCard from '../components/admin/SidecarConnectionCard'
@@ -1265,6 +1266,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <ResearchNotebookConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Studio v2 motor settings — gated by FF_NOTEBOOK_STUDIO_V2 */}
+      {IS_FIREBASE && isFeatureEnabled('FF_NOTEBOOK_STUDIO_V2') && (
+        <AdminCollapsibleSection
+          id="section_studio_v2_config"
+          title="Estúdio v2 — motor de refino iterativo"
+          icon={BookOpen}
+          iconColor="text-teal-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <StudioV2ConfigCard />
         </AdminCollapsibleSection>
       )}
 

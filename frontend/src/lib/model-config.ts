@@ -11,7 +11,7 @@
 
 import { IS_FIREBASE } from './firebase'
 import { ensureUserSettingsMigrated, getCurrentUserId, saveUserSettings } from './firestore-service'
-import type { FallbackPriorityConfig, FallbackPriorityList, UserSettingsData } from './firestore-types'
+import type { FallbackPriorityConfig, FallbackPriorityList, StudioV2SettingsData, UserSettingsData } from './firestore-types'
 import {
   ACERVO_CLASSIFICADOR_AGENT_DEFS,
   ACERVO_EMENTA_AGENT_DEFS,
@@ -1405,6 +1405,56 @@ export async function validateScopedAgentModels(
 /**
  * Re-export so consumers can import from a single module.
  */
+// ── Studio v2 motor settings (FF_NOTEBOOK_STUDIO_V2) ────────────────────────
+
+/** Clamp persisted Studio v2 overrides to safe ranges; drops invalid fields. */
+export function sanitizeStudioV2Settings(raw: StudioV2SettingsData | undefined | null): StudioV2SettingsData {
+  const out: StudioV2SettingsData = {}
+  if (raw && typeof raw === 'object') {
+    const maxIter = Number((raw as StudioV2SettingsData).maxIterations)
+    if (Number.isFinite(maxIter)) out.maxIterations = Math.min(6, Math.max(1, Math.floor(maxIter)))
+    const cap = Number((raw as StudioV2SettingsData).costCapUsd)
+    if (Number.isFinite(cap) && cap > 0) out.costCapUsd = Math.min(50, cap)
+    const thr = Number((raw as StudioV2SettingsData).criticThreshold)
+    if (Number.isFinite(thr)) out.criticThreshold = Math.min(100, Math.max(0, Math.floor(thr)))
+    const cm = String((raw as StudioV2SettingsData).criticModel ?? '').trim()
+    if (cm) out.criticModel = cm
+  }
+  return out
+}
+
+/** Load the user's Studio v2 overrides (empty when unset or in demo mode). */
+export async function loadStudioV2Settings(uid?: string): Promise<StudioV2SettingsData> {
+  if (!IS_FIREBASE) return {}
+  try {
+    const resolvedUid = resolveScopedUid(uid)
+    const userSettings = resolvedUid ? await ensureUserSettingsMigrated(resolvedUid) : {} as UserSettingsData
+    return sanitizeStudioV2Settings(userSettings.studio_v2_settings)
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Persist the user's Studio v2 overrides. Validates a non-empty criticModel
+ * against the personal catalog so the user can't pick a model they don't have.
+ */
+export async function saveStudioV2Settings(settings: StudioV2SettingsData, uid?: string): Promise<void> {
+  if (!IS_FIREBASE) return
+  const resolvedUid = resolveScopedUid(uid)
+  if (!resolvedUid) throw new Error('Usuário não autenticado.')
+
+  const sanitized = sanitizeStudioV2Settings(settings)
+  if (sanitized.criticModel) {
+    const userSettings = await ensureUserSettingsMigrated(resolvedUid)
+    const catalogIds = buildCatalogIdSet(userSettings as unknown as Record<string, unknown>)
+    if (!catalogIds.has(sanitized.criticModel)) {
+      throw new Error(`O modelo "${sanitized.criticModel}" não está no catálogo pessoal do usuário e não pode ser usado como crítico.`)
+    }
+  }
+  await saveUserSettings(resolvedUid, { studio_v2_settings: sanitized } as Partial<UserSettingsData>)
+}
+
 export type { FallbackPriorityConfig, FallbackPriorityList } from './firestore-types'
 
 /** All four agent categories that get an independent fallback priority list. */
