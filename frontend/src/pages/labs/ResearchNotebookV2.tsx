@@ -105,7 +105,7 @@ import {
   STUDIO_PIPELINE_TOTAL_STEPS,
 } from '../../lib/notebook-artifact-tasks'
 import { buildWorkspaceSettingsPath } from '../../lib/workspace-routes'
-import { createUsageExecutionRecord, type UsageFunctionKey } from '../../lib/cost-analytics'
+import { createUsageExecutionRecord, type UsageExecutionRecord, type UsageFunctionKey } from '../../lib/cost-analytics'
 import { AREA_LABELS } from '../../lib/constants'
 import { isStructuredArtifactType, parseArtifactContent } from '../../lib/artifact-parsers'
 import type { StoredNotebookMedia } from '../../lib/notebook-media-storage'
@@ -1243,7 +1243,8 @@ export default function ResearchNotebookV2() {
     const notebookTopic = options?.notebookTopic ?? activeNotebook?.topic ?? artifact.title
     const notebookTitle = options?.notebookTitle ?? activeNotebook?.title ?? ''
     const freshNotebook = await getFreshNotebookOrThrow(notebookId)
-    const materializedArtifact = await materializeStudioArtifactForNotebook({ uid: userId, notebookId, artifact })
+    const mediaExecutions: UsageExecutionRecord[] = []
+    const materializedArtifact = await materializeStudioArtifactForNotebook({ uid: userId, notebookId, artifact }, mediaExecutions)
     const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore([...freshNotebook.artifacts, materializedArtifact])
 
     const costKey: UsageFunctionKey = ARTIFACT_COST_KEY[artifact.type] ?? 'caderno_pesquisa'
@@ -1272,7 +1273,7 @@ export default function ResearchNotebookV2() {
         runtime_cap: execution.runtime_cap,
       }),
     )
-    const updatedExecutions = [...(freshNotebook.llm_executions || []), ...newExecutions]
+    const updatedExecutions = [...(freshNotebook.llm_executions || []), ...newExecutions, ...mediaExecutions]
 
     await updateResearchNotebook(userId, notebookId, {
       artifacts: updatedArtifacts,
