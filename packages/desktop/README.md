@@ -11,13 +11,30 @@ autenticado por token, que a interface web aciona via WebSocket em
 
 ## Como usar
 
-```bash
-# pasta padrão ~/Lexio, permissões read,write
-npx @lexio/desktop
+### Opção A — Atalho de 1 clique (recomendado para quem não usa terminal)
 
-# escolhendo a pasta e as permissões
-npx @lexio/desktop --root "/caminho/da/pasta" --permissions read,write,execute
+1. Instale o **Node.js LTS** (https://nodejs.org) — uma vez só.
+2. Baixe o código do Lexio (no GitHub: botão verde **Code → Download ZIP**) e extraia.
+3. Abra a pasta `packages/desktop` e dê **duplo-clique** no atalho do seu sistema:
+   - **Windows:** `start-pc-windows.cmd`
+   - **macOS/Linux:** `start-pc-mac-linux.command`
+
+O atalho instala o componente necessário na primeira vez e liga o agente. Para
+trocar a pasta de trabalho ou liberar `execute`, edite as duas linhas de
+configuração no topo do arquivo.
+
+### Opção B — Linha de comando (a partir do código)
+
+```bash
+cd packages/desktop
+npm install          # só na primeira vez (baixa a dependência `ws`)
+node bin/lexio-desktop.mjs --root "/caminho/da/pasta" --permissions read,write,execute
 ```
+
+### Opção C — npx (somente quando o pacote for publicado no npm)
+
+> ⚠️ Ainda **não disponível**: o pacote é privado e não está publicado. Depois da
+> publicação (ver `PUBLISHING.md`), bastará: `npx @lexio/desktop --root "..." --permissions ...`
 
 Ao iniciar, o sidecar:
 

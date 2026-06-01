@@ -31,15 +31,21 @@ build/deploy (`VITE_FF_CHAT_PC_APPROVALS=true`, etc.) nos workflows
 
 Necessário para as ações de **arquivos/shell/git locais** (Ondas 1 e 2).
 
-**Onde:** terminal do seu PC.
+**Onde:** no seu PC (não no navegador). Duas formas:
+
+**Mais fácil — atalho de 1 clique:** baixe o código (GitHub → **Code → Download ZIP**),
+extraia, abra a pasta `packages/desktop` e dê **duplo-clique** em `start-pc-windows.cmd`
+(Windows) ou `start-pc-mac-linux.command` (macOS/Linux). Ele instala e liga sozinho. Para
+liberar `execute`/`delete`/`rename` ou trocar a pasta, edite as duas linhas no topo do atalho.
+
+**Terminal — a partir do código:**
 
 ```bash
-# pasta de trabalho = sandbox; permissões mínimas necessárias
-npx @lexio/desktop --root "/caminho/da/pasta" --permissions read,write,execute,delete,rename
+cd packages/desktop && npm install   # só na 1ª vez (baixa a dependência `ws`)
+node bin/lexio-desktop.mjs --root "/caminho/da/pasta" --permissions read,write,execute,delete,rename
 ```
 
-> Enquanto o pacote não estiver publicado no npm (ver passo 6), rode a partir do
-> repositório: `node packages/desktop/bin/lexio-desktop.mjs --root ... --permissions ...`
+> O atalho `npx @lexio/desktop` só funciona **depois** que o pacote for publicado no npm (passo 6).
 
 O processo imprime um **token de pareamento** e a pasta. **Onde colar:** `/settings` →
 **"Pasta local (PC)"** → cole o token → **"Testar conexão"** (deve mostrar a pasta e as

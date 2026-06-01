@@ -11,6 +11,8 @@
   "files": [
     "bin",
     "src",
+    "start-pc-windows.cmd",
+    "start-pc-mac-linux.command",
     "README.md"
   ],
   "scripts": {
