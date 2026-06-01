@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   runStudioPipelineV2,
+  studioGenerationMetaPatch,
   DEFAULT_STUDIO_V2_SETTINGS,
   type RunStudioPipelineV2Options,
   type StudioV2LlmCall,
@@ -187,6 +188,21 @@ describe('runStudioPipelineV2', () => {
   it('uses sane defaults', () => {
     expect(DEFAULT_STUDIO_V2_SETTINGS.maxIterations).toBe(3)
     expect(DEFAULT_STUDIO_V2_SETTINGS.costCapUsd).toBeGreaterThan(0)
+  })
+
+  it('studioGenerationMetaPatch returns {} for results without generation_meta (audio/presentation/null)', () => {
+    expect(studioGenerationMetaPatch({ content: 'x', executions: [] })).toEqual({})
+    expect(studioGenerationMetaPatch(null)).toEqual({})
+    expect(studioGenerationMetaPatch(undefined)).toEqual({})
+    expect(studioGenerationMetaPatch('not an object')).toEqual({})
+  })
+
+  it('threads generation_meta through to the persisted artifact patch', async () => {
+    const { call } = makeLlmCall([verdict(90, false)])
+    const result = await runStudioPipelineV2(INPUT, undefined, baseOptions(call))
+    const patch = studioGenerationMetaPatch(result)
+    expect(patch.generation_meta).toBe(result.generation_meta)
+    expect(patch.generation_meta?.pipeline_version).toBe('studio_v2')
   })
 
   it('does not touch the network/Firestore in test mode (llmCall injected)', async () => {

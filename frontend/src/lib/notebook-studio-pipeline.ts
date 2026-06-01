@@ -27,6 +27,7 @@ import {
   type ResearchNotebookModelMap,
 } from './model-config'
 import type { StudioArtifactType } from './firestore-service'
+import type { StudioGenerationMeta, StudioV2StopReason } from './firestore-types'
 import { isStructuredArtifactType, parseArtifactContent } from './artifact-parsers'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 import {
@@ -97,6 +98,8 @@ export interface StudioPipelineResult {
   quality?: StudioCriticVerdict
   /** Number of writing/revision iterations (1, or 2 when the gate forced a revision). */
   iterations?: number
+  /** Present when produced by the Studio v2 motor (FF_NOTEBOOK_STUDIO_V2). */
+  generation_meta?: StudioGenerationMeta
 }
 
 export interface StudioVisualMediaResult {
@@ -1242,26 +1245,8 @@ export const DEFAULT_STUDIO_V2_SETTINGS: StudioV2Settings = {
   costCapUsd: 2.5,
 }
 
-export type StudioV2StopReason = 'should_stop' | 'threshold_met' | 'max_iterations' | 'cost_cap'
-
-export interface StudioGenerationMeta {
-  pipeline_version: 'studio_v2'
-  /** Writing passes performed (initial draft + revisions). */
-  iterations: number
-  /** Critic evaluations performed. */
-  critic_rounds: number
-  /** Critic score per round, in order. */
-  scores: number[]
-  final_score: number | null
-  critic_threshold: number
-  max_iterations: number
-  soft_cost_cap_usd: number
-  total_cost_usd: number
-  wall_clock_ms: number
-  stop_reason: StudioV2StopReason
-  /** True when the loop stopped below threshold because a cap (iteration/cost) was hit. */
-  forced_submission: boolean
-}
+// StudioGenerationMeta + StudioV2StopReason are defined in firestore-types (the
+// persistence home) and imported above, since the meta is stored on StudioArtifact.
 
 export interface StudioPipelineV2Result extends StudioPipelineResult {
   generation_meta: StudioGenerationMeta
@@ -1479,6 +1464,36 @@ export async function runStudioPipelineV2(
     iterations: writingPasses,
     generation_meta,
   }
+}
+
+/**
+ * Single dispatch point used by every Studio call site. Routes to the v2
+ * refinement motor when FF_NOTEBOOK_STUDIO_V2 is on (safe defaults + existing
+ * research_notebook_models config), otherwise the v3 pipeline. Behaviour is
+ * identical to runStudioPipeline when the flag is off.
+ */
+export async function runStudioPipelineWithFlag(
+  input: StudioPipelineInput,
+  onProgress?: StudioProgressCallback,
+  signal?: AbortSignal,
+): Promise<StudioPipelineResult> {
+  if (isEnabled('FF_NOTEBOOK_STUDIO_V2')) {
+    return runStudioPipelineV2(input, onProgress, { signal })
+  }
+  return runStudioPipeline(input, onProgress, signal)
+}
+
+/**
+ * Spreadable patch carrying generation_meta when the pipeline result has one
+ * (Studio v2), or an empty object otherwise — so call sites never write
+ * `undefined` to Firestore. Accepts any pipeline result union: audio/presentation
+ * results simply lack the field, which is fine for the optional param.
+ */
+export function studioGenerationMetaPatch(
+  result: unknown,
+): { generation_meta?: StudioGenerationMeta } {
+  const meta = (result as { generation_meta?: StudioGenerationMeta } | null | undefined)?.generation_meta
+  return meta ? { generation_meta: meta } : {}
 }
 
 export async function generateStructuredVisualArtifactMedia(

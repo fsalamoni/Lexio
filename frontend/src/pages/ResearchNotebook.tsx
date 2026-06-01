@@ -55,7 +55,8 @@ import { materializeExistingStudioArtifactExports, materializeStudioArtifactForN
 import { analyzeNotebookAcervo, type AnalyzedDocument, type AcervoAnalysisProgress } from '../lib/notebook-acervo-analyzer'
 import {
   generateStructuredVisualArtifactMedia,
-  runStudioPipeline,
+  runStudioPipelineWithFlag,
+  studioGenerationMetaPatch,
   type StudioProgressCallback,
 } from '../lib/notebook-studio-pipeline'
 import {
@@ -2663,7 +2664,7 @@ Instruções:
             ? await loadAudioGenerationRuntime().then(({ runAudioGenerationPipeline }) => runAudioGenerationPipeline(pipelineInput, onProgress))
             : artifactType === 'apresentacao'
               ? await loadPresentationGenerationRuntime().then(({ runPresentationGenerationPipeline }) => runPresentationGenerationPipeline(pipelineInput, onProgress))
-              : await runStudioPipeline(pipelineInput, onProgress)
+              : await runStudioPipelineWithFlag(pipelineInput, onProgress)
 
           const artifact: StudioArtifact = {
             id: generateId(),
@@ -2672,6 +2673,7 @@ Instruções:
             content: result.content,
             format: isStructuredArtifactType(artifactType) ? 'json' : 'markdown',
             created_at: new Date().toISOString(),
+            ...studioGenerationMetaPatch(result),
           }
 
           onTaskProgress({

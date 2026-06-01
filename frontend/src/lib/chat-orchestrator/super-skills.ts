@@ -2131,7 +2131,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           return { tool_message: 'Erro: nenhuma chave OpenRouter disponível. Configure sua chave em Configurações antes de gerar artefatos do Estúdio.' }
         }
 
-        const [{ createResearchNotebook, getResearchNotebook }, { isStructuredArtifactType }, { runStudioPipeline }, { persistStudioArtifactToNotebook }] = await Promise.all([
+        const [{ createResearchNotebook, getResearchNotebook }, { isStructuredArtifactType }, { runStudioPipelineWithFlag, studioGenerationMetaPatch }, { persistStudioArtifactToNotebook }] = await Promise.all([
           import('../firestore-service'),
           import('../artifact-parsers'),
           import('../notebook-studio-pipeline'),
@@ -2182,7 +2182,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           ? await import('../presentation-generation-pipeline-v2').then(module => module.runPresentationGenerationPipelineV2(pipelineInput, progressCallback, ctx.signal))
           : artifactType === 'audio_script'
             ? await import('../audio-generation-pipeline').then(module => module.runAudioGenerationPipeline(pipelineInput, progressCallback, ctx.signal))
-            : await runStudioPipeline(pipelineInput, progressCallback, ctx.signal)
+            : await runStudioPipelineWithFlag(pipelineInput, progressCallback, ctx.signal)
 
         content = result.content
         const executions = [...result.executions]
@@ -2249,6 +2249,7 @@ const generateStudioArtifactSkill: Skill<GenerateStudioArtifactArgs> = {
           content,
           format,
           created_at: nowIso(),
+          ...studioGenerationMetaPatch(result),
         }
         const persisted = await persistStudioArtifactToNotebook({
           uid: ctx.uid,
