@@ -7,6 +7,7 @@ import {
   type StudioV2LlmCall,
 } from './notebook-studio-pipeline'
 import type { StudioPipelineInput } from './notebook-studio-pipeline'
+import { sanitizeStudioV2Settings } from './model-config'
 import type { LLMResult } from './llm-client'
 import type { ResearchNotebookModelMap } from './model-config'
 
@@ -188,6 +189,35 @@ describe('runStudioPipelineV2', () => {
   it('uses sane defaults', () => {
     expect(DEFAULT_STUDIO_V2_SETTINGS.maxIterations).toBe(3)
     expect(DEFAULT_STUDIO_V2_SETTINGS.costCapUsd).toBeGreaterThan(0)
+  })
+
+  it('sanitizeStudioV2Settings clamps overrides to safe ranges and drops invalid fields', () => {
+    expect(sanitizeStudioV2Settings({ maxIterations: 999, costCapUsd: 1000, criticThreshold: 250 })).toEqual({
+      maxIterations: 6,
+      costCapUsd: 50,
+      criticThreshold: 100,
+    })
+    expect(sanitizeStudioV2Settings({ maxIterations: 0, costCapUsd: -5, criticThreshold: -10 })).toEqual({
+      maxIterations: 1,
+      criticThreshold: 0,
+      // costCapUsd <= 0 is dropped
+    })
+    expect(sanitizeStudioV2Settings({ criticModel: '  anthropic/claude-sonnet-4  ' })).toEqual({
+      criticModel: 'anthropic/claude-sonnet-4',
+    })
+    expect(sanitizeStudioV2Settings({ criticModel: '   ' })).toEqual({})
+    expect(sanitizeStudioV2Settings(null)).toEqual({})
+    expect(sanitizeStudioV2Settings(undefined)).toEqual({})
+  })
+
+  it('the motor honors injected settings overrides (settings option wins over persisted/defaults)', async () => {
+    const { call } = makeLlmCall([verdict(40), verdict(40), verdict(40)])
+    const result = await runStudioPipelineV2(INPUT, undefined, baseOptions(call, { maxIterations: 1, criticThreshold: 95 }))
+    // maxIterations 1 → only the draft, one critic, no revision; threshold 95 not met.
+    expect(result.generation_meta.max_iterations).toBe(1)
+    expect(result.generation_meta.critic_threshold).toBe(95)
+    expect(result.generation_meta.iterations).toBe(1)
+    expect(result.generation_meta.stop_reason).toBe('max_iterations')
   })
 
   it('studioGenerationMetaPatch returns {} for results without generation_meta (audio/presentation/null)', () => {

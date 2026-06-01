@@ -96,6 +96,23 @@ export interface MultimodalPolicyConfig {
   modalities?: Partial<Record<MultimodalModality, MultimodalModalityPolicy>>
 }
 
+/**
+ * Persisted per-user overrides for the Studio v2 refinement motor
+ * (FF_NOTEBOOK_STUDIO_V2). All fields optional; missing fields fall back to
+ * DEFAULT_STUDIO_V2_SETTINGS. Field names mirror StudioV2Settings so they spread
+ * directly. Defined here (not in the pipeline) to avoid a model-config import cycle.
+ */
+export interface StudioV2SettingsData {
+  /** Max writing passes (1 draft + revisions). Clamped to [1, 6]. */
+  maxIterations?: number
+  /** Soft USD ceiling per artifact. */
+  costCapUsd?: number
+  /** Acceptance score override (0-100); defaults to the per-artifact-type value. */
+  criticThreshold?: number
+  /** Critic model override; defaults to studio_revisor. */
+  criticModel?: string
+}
+
 export interface UserSettingsData {
   legacy_migrated_at?: string
   api_keys?: Record<string, string>
@@ -170,6 +187,8 @@ export interface UserSettingsData {
    * explicitly select.
    */
   fallback_priorities?: FallbackPriorityConfig
+  /** Per-user overrides for the Studio v2 refinement motor (FF_NOTEBOOK_STUDIO_V2). */
+  studio_v2_settings?: StudioV2SettingsData
   document_types?: AdminDocumentType[]
   legal_areas?: AdminLegalArea[]
   /** Active platform skin/theme ID */

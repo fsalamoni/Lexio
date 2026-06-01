@@ -22,6 +22,7 @@ import {
   buildPipelineFallbackResolver,
   loadFallbackPriorityConfig,
   loadResearchNotebookModels,
+  loadStudioV2Settings,
   RESEARCH_NOTEBOOK_AGENT_DEFS,
   validateScopedAgentModels,
   type ResearchNotebookModelMap,
@@ -1294,12 +1295,15 @@ export async function runStudioPipelineV2(
   const signal = options?.signal
   throwIfAborted(signal)
 
-  const settings: StudioV2Settings = { ...DEFAULT_STUDIO_V2_SETTINGS, ...(options?.settings ?? {}) }
+  const testMode = Boolean(options?.llmCall)
+  // Explicit options win; otherwise load the user's persisted overrides (skipped
+  // in test mode so the motor stays deterministic and offline).
+  const persistedSettings = options?.settings ?? (testMode ? {} : await loadStudioV2Settings(input.uid).catch(() => ({})))
+  const settings: StudioV2Settings = { ...DEFAULT_STUDIO_V2_SETTINGS, ...persistedSettings }
   const maxIterations = Math.min(STUDIO_V2_HARD_MAX_ITERATIONS, Math.max(1, Math.floor(settings.maxIterations)))
   const costCapUsd = settings.costCapUsd > 0 ? settings.costCapUsd : DEFAULT_STUDIO_V2_SETTINGS.costCapUsd
   const threshold = settings.criticThreshold ?? studioCriticThreshold(input.artifactType)
 
-  const testMode = Boolean(options?.llmCall)
   const models: ResearchNotebookModelMap = options?.models ?? await loadResearchNotebookModels(input.uid)
   const resolveFb =
     options?.fallbackResolver ??
