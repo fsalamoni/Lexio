@@ -27,6 +27,9 @@ export interface ExternalVideoClipResult {
   mimeType?: string
   provider: string
   jobId?: string
+  /** Provider-reported price for this clip, when the endpoint returns one
+   *  (cost_usd / cost / price / total_cost). Undefined when not provided. */
+  costUsd?: number
 }
 
 export interface ExternalVideoProviderDiagnostics {
@@ -401,6 +404,21 @@ function getResultUrl(payload: ExternalVideoResponsePayload): string | undefined
   return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate.trim() : undefined
 }
 
+function getCostUsd(payload: ExternalVideoResponsePayload): number | undefined {
+  const nested = payload.data && typeof payload.data === 'object' ? payload.data as Record<string, unknown> : undefined
+  const response = payload.response && typeof payload.response === 'object' ? payload.response as Record<string, unknown> : undefined
+  const result = payload.result && typeof payload.result === 'object' ? payload.result as Record<string, unknown> : undefined
+  for (const src of [payload as Record<string, unknown>, nested, response, result]) {
+    if (!src) continue
+    for (const key of ['cost_usd', 'cost', 'price', 'total_cost', 'total_cost_usd']) {
+      const raw = src[key]
+      const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseFloat(raw) : NaN
+      if (Number.isFinite(value) && value >= 0) return value
+    }
+  }
+  return undefined
+}
+
 function getJobId(payload: ExternalVideoResponsePayload): string | undefined {
   const nested = payload.data && typeof payload.data === 'object'
     ? payload.data as Record<string, unknown>
@@ -695,6 +713,7 @@ export async function requestExternalVideoClip(
     mimeType: finalPayload.mime_type || 'video/mp4',
     provider: cfg.provider,
     jobId: getJobId(finalPayload) || getJobId(payload),
+    costUsd: getCostUsd(finalPayload) ?? getCostUsd(payload),
   }
 }
 

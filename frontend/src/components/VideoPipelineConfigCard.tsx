@@ -147,10 +147,12 @@ export default function VideoPipelineConfigCard() {
             </div>
             <p className="text-[var(--v2-ink-faint)]">
               <strong>Onde é usado:</strong> (a) este pipeline de vídeo (11 agentes); (b) a skill <code>generate_video</code>{' '}
-              do Chat; (c) o <strong>roteiro de vídeo do Caderno</strong> (Estúdio), que renderiza e persiste o MP4 pelo
-              provedor externo quando a flag <strong>FF_NOTEBOOK_STUDIO_VIDEO</strong> está ligada (Configurações → Recursos
-              beta). O consumo de vídeo é registrado em Usos e Custos e na Administração da plataforma (fase{' '}
-              <strong>media_video_render</strong>).
+              do Chat; (c) o <strong>roteiro de vídeo do Caderno</strong> (Estúdio), que renderiza e persiste o MP4 quando a
+              flag <strong>FF_NOTEBOOK_STUDIO_VIDEO</strong> está ligada (Configurações → Recursos beta), com a{' '}
+              <strong>mesma resolução do Chat</strong>: fal.ai com a sua chave (usando o modelo do agente{' '}
+              <strong>Gerador de Clipes de Vídeo</strong>) e, na ausência dela, o provedor externo por env. O consumo é
+              registrado em Usos e Custos e na Administração da plataforma (fase <strong>media_video_render</strong>, com o
+              preço do provedor quando ele o retorna).
             </p>
           </div>
 
