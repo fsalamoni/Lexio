@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { maybeAutoGenerateVideoFromScript } from './notebook-studio-artifact-persistence'
 import { clearRuntimeFeatureFlags, setRuntimeFeatureFlags } from './feature-flags'
+import type { UsageExecutionRecord } from './cost-analytics'
 import type { StudioArtifact } from './firestore-types'
 
 // ── Mocks ───────────────────────────────────────────────────────────────────
@@ -74,6 +75,28 @@ describe('maybeAutoGenerateVideoFromScript', () => {
     const prompt = requestExternalVideoClipMock.mock.calls[0][0].prompt as string
     expect(prompt).toContain('responsabilidade civil')
     expect(prompt).toContain('Cena 1')
+  })
+
+  it('emits a media_video_render usage record into the sink (for Usos e Custos / Admin)', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    const sink: UsageExecutionRecord[] = []
+    await maybeAutoGenerateVideoFromScript(videoScript(), 'uid', 'n1', sink)
+    expect(sink).toHaveLength(1)
+    expect(sink[0].function_key).toBe('video_pipeline')
+    expect(sink[0].function_label).toBe('Gerador de Vídeo')
+    expect(sink[0].phase).toBe('media_video_render')
+    expect(sink[0].agent_name).toBe('Gerador de Vídeo (Estúdio)')
+    expect(sink[0].provider_label).toBe('acme')
+    expect(sink[0].source_id).toBe('n1')
+    expect(sink[0].cost_usd).toBe(0)
+  })
+
+  it('does not emit a usage record when the provider is unconfigured', async () => {
+    setRuntimeFeatureFlags({ FF_NOTEBOOK_STUDIO_VIDEO: true })
+    isExternalVideoProviderConfiguredMock.mockReturnValue(false)
+    const sink: UsageExecutionRecord[] = []
+    await maybeAutoGenerateVideoFromScript(videoScript(), 'uid', 'n1', sink)
+    expect(sink).toHaveLength(0)
   })
 
   it('keeps the provider URL when the durable upload fetch fails', async () => {

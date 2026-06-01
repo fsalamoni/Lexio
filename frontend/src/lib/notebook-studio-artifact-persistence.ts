@@ -1,4 +1,4 @@
-import { createUsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
+import { createUsageExecutionRecord, type UsageExecutionRecord, type UsageFunctionKey } from './cost-analytics'
 import { getResearchNotebook, updateResearchNotebook } from './firestore-service'
 import type { StudioArtifact, StudioArtifactType } from './firestore-types'
 import type { StudioStepExecution } from './notebook-studio-pipeline'
@@ -17,6 +17,7 @@ async function maybeAutoSynthesizeAudioScript(
   artifact: StudioArtifact,
   uid: string,
   notebookId: string,
+  executionSink?: UsageExecutionRecord[],
 ): Promise<StudioArtifact> {
   if (artifact.type !== 'audio_script' || !isEnabled('FF_NOTEBOOK_AUDIO_AUTO_TTS')) return artifact
   let parsed: Record<string, unknown>
@@ -29,6 +30,7 @@ async function maybeAutoSynthesizeAudioScript(
   }
   if (typeof parsed.audioUrl === 'string' && parsed.audioUrl.trim()) return artifact // already has audio
   try {
+    const startedAt = Date.now()
     const [{ getOpenRouterKey }, { synthesizeAudioFromScript }, { uploadNotebookMediaArtifact }] = await Promise.all([
       import('./generation-service'),
       import('./notebook-audio-pipeline'),
@@ -39,6 +41,20 @@ async function maybeAutoSynthesizeAudioScript(
     const result = await synthesizeAudioFromScript({ apiKey, rawScriptContent: artifact.content })
     if (!result.audioBlob) return artifact
     const stored = await uploadNotebookMediaArtifact(uid, notebookId, artifact.title || 'Áudio', result.audioBlob, 'audios', '.mp3')
+    // Record a usage marker so the TTS render surfaces in Usos e Custos / Admin
+    // (cost_usd unknown for media → 0, mirroring the chat's generate_video).
+    executionSink?.push(createUsageExecutionRecord({
+      source_type: 'audio_pipeline',
+      source_id: notebookId,
+      phase: 'media_tts_generation',
+      agent_name: 'Narração TTS (Estúdio)',
+      model: result.model || 'openai/tts-1-hd',
+      provider_id: result.provider_id ?? null,
+      provider_label: result.provider_label ?? null,
+      cost_usd: 0,
+      duration_ms: Date.now() - startedAt,
+      execution_state: 'completed',
+    }))
     return {
       ...artifact,
       content: JSON.stringify({ ...parsed, audioUrl: stored.url }),
@@ -86,6 +102,7 @@ export async function maybeAutoGenerateVideoFromScript(
   artifact: StudioArtifact,
   uid: string,
   notebookId: string,
+  executionSink?: UsageExecutionRecord[],
 ): Promise<StudioArtifact> {
   if (artifact.type !== 'video_script' || !isEnabled('FF_NOTEBOOK_STUDIO_VIDEO')) return artifact
   let parsed: Record<string, unknown>
@@ -98,6 +115,7 @@ export async function maybeAutoGenerateVideoFromScript(
   }
   if (typeof parsed.renderedVideoUrl === 'string' && parsed.renderedVideoUrl.trim()) return artifact // already rendered
   try {
+    const startedAt = Date.now()
     const { isExternalVideoProviderConfigured, requestExternalVideoClip } = await import('./external-video-provider')
     if (!isExternalVideoProviderConfigured()) return artifact // no env provider here — best-effort
     const prompt = buildVideoPromptFromScript(parsed, artifact.title || '')
@@ -122,6 +140,20 @@ export async function maybeAutoGenerateVideoFromScript(
       // Provider URL kept as-is — still a real, playable video.
     }
 
+    // Record a usage marker so the video render surfaces in Usos e Custos /
+    // Admin (cost_usd unknown for media → 0, mirroring the chat's generate_video).
+    executionSink?.push(createUsageExecutionRecord({
+      source_type: 'video_pipeline',
+      source_id: notebookId,
+      phase: 'media_video_render',
+      agent_name: 'Gerador de Vídeo (Estúdio)',
+      model: clip.provider || 'external-video-provider',
+      provider_id: clip.provider ?? null,
+      provider_label: clip.provider ?? null,
+      cost_usd: 0,
+      duration_ms: Date.now() - startedAt,
+      execution_state: 'completed',
+    }))
     return {
       ...artifact,
       content: JSON.stringify({ ...parsed, renderedVideoUrl: videoUrl }),
@@ -162,13 +194,14 @@ export interface MaterializeStudioArtifactForNotebookInput {
   artifact: StudioArtifact
 }
 
-export async function materializeStudioArtifactForNotebook({
-  uid,
-  notebookId,
-  artifact,
-}: MaterializeStudioArtifactForNotebookInput): Promise<StudioArtifact> {
-  const withAudio = await maybeAutoSynthesizeAudioScript(artifact, uid, notebookId)
-  const withMedia = await maybeAutoGenerateVideoFromScript(withAudio, uid, notebookId)
+export async function materializeStudioArtifactForNotebook(
+  { uid, notebookId, artifact }: MaterializeStudioArtifactForNotebookInput,
+  /** Optional sink: media auto-gen (TTS/video) pushes usage records here so the
+   *  caller can persist them into the notebook's llm_executions. */
+  mediaExecutionSink?: UsageExecutionRecord[],
+): Promise<StudioArtifact> {
+  const withAudio = await maybeAutoSynthesizeAudioScript(artifact, uid, notebookId, mediaExecutionSink)
+  const withMedia = await maybeAutoGenerateVideoFromScript(withAudio, uid, notebookId, mediaExecutionSink)
   const materializedArtifact = await materializeStudioArtifactExports(withMedia, { userId: uid, notebookId })
   return sanitizePresentationV2ArtifactsForFirestore([materializedArtifact])[0] ?? materializedArtifact
 }
@@ -184,7 +217,8 @@ export async function persistStudioArtifactToNotebook({
     throw new Error(`Caderno ${notebookId} não encontrado ou inacessível.`)
   }
 
-  const materializedArtifact = await materializeStudioArtifactForNotebook({ uid, notebookId, artifact })
+  const mediaExecutions: UsageExecutionRecord[] = []
+  const materializedArtifact = await materializeStudioArtifactForNotebook({ uid, notebookId, artifact }, mediaExecutions)
   const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore([...(notebook.artifacts ?? []), materializedArtifact])
   const costKey = ARTIFACT_COST_KEY[artifact.type] ?? 'caderno_pesquisa'
   const newExecutions = executions.map(execution => createUsageExecutionRecord({
@@ -209,10 +243,10 @@ export async function persistStudioArtifactToNotebook({
 
   await updateResearchNotebook(uid, notebookId, {
     artifacts: updatedArtifacts,
-    llm_executions: [...(notebook.llm_executions ?? []), ...newExecutions],
+    llm_executions: [...(notebook.llm_executions ?? []), ...newExecutions, ...mediaExecutions],
   })
 
-  return { artifact: materializedArtifact, executionCount: newExecutions.length }
+  return { artifact: materializedArtifact, executionCount: newExecutions.length + mediaExecutions.length }
 }
 
 export async function materializeExistingStudioArtifactExports({
@@ -230,15 +264,19 @@ export async function materializeExistingStudioArtifactExports({
     throw new Error(`Artefato ${artifactId} não encontrado no caderno ${notebookId}.`)
   }
 
-  const withAudio = await maybeAutoSynthesizeAudioScript(existingArtifact, uid, notebookId)
-  const withMedia = await maybeAutoGenerateVideoFromScript(withAudio, uid, notebookId)
+  const mediaExecutions: UsageExecutionRecord[] = []
+  const withAudio = await maybeAutoSynthesizeAudioScript(existingArtifact, uid, notebookId, mediaExecutions)
+  const withMedia = await maybeAutoGenerateVideoFromScript(withAudio, uid, notebookId, mediaExecutions)
   const materializedArtifact = await materializeStudioArtifactExports(withMedia, { userId: uid, notebookId })
   const updatedArtifacts = sanitizePresentationV2ArtifactsForFirestore((notebook.artifacts ?? []).map(candidate => (
     candidate.id === artifactId ? materializedArtifact : candidate
   )))
   const storedArtifact = updatedArtifacts.find(candidate => candidate.id === artifactId) ?? materializedArtifact
 
-  await updateResearchNotebook(uid, notebookId, { artifacts: updatedArtifacts })
+  await updateResearchNotebook(uid, notebookId, {
+    artifacts: updatedArtifacts,
+    ...(mediaExecutions.length ? { llm_executions: [...(notebook.llm_executions ?? []), ...mediaExecutions] } : {}),
+  })
 
   return { artifact: storedArtifact, artifacts: updatedArtifacts }
 }

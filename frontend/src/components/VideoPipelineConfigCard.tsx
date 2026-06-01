@@ -115,6 +115,46 @@ export default function VideoPipelineConfigCard() {
           </div>
 
           <div className={`${V2_AGENT_CONFIG_PANEL_BASE} space-y-2 text-[11px] leading-5`}>
+            <p className="text-xs font-semibold text-[var(--v2-ink-strong)]">Provedores e modelos de vídeo suportados (todos)</p>
+            <div className="space-y-1.5 text-[var(--v2-ink-soft)]">
+              <p>
+                <strong>1. fal.ai nativo</strong> — recomendado, usa <strong>sua</strong> chave (sem variáveis de ambiente).
+                Salve a chave em <strong>Configurações → Provedores de IA</strong> (provedor “fal.ai (Vídeo)”) e escolha o
+                modelo no agente <strong>Gerador de Clipes de Vídeo</strong>. Base padrão <code>https://queue.fal.run</code>.
+                Modelos validados:
+              </p>
+              <ul className="ml-3 list-disc space-y-0.5 text-[var(--v2-ink-faint)]">
+                <li><code>fal-ai/veo3</code> · <code>fal-ai/veo3/fast</code> — Google Veo 3 / Veo 3 Fast</li>
+                <li><code>fal-ai/kling-video/v2.5-turbo/pro/text-to-video</code> — Kling 2.5 Turbo Pro</li>
+                <li><code>fal-ai/wan/v2.2-a14b/text-to-video</code> — Wan 2.2 A14B</li>
+                <li><code>fal-ai/minimax/hailuo-02/standard/text-to-video</code> — MiniMax Hailuo 02</li>
+                <li><code>fal-ai/ltx-video-13b-distilled</code> — LTX-Video 13B</li>
+              </ul>
+              <p className="text-[var(--v2-ink-faint)]">
+                Qualquer outra rota de vídeo da fal.ai também funciona; as variantes <em>image-to-video</em> são resolvidas
+                automaticamente para encadear clipes com continuidade visual.
+              </p>
+              <p>
+                <strong>2. Provedor externo por env</strong> — um endpoint HTTP que você controla pode intermediar{' '}
+                <strong>qualquer</strong> provedor (Google Veo, Replicate, Runway, Pika, fal.ai como agregador, …). O valor
+                de <code>VITE_EXTERNAL_VIDEO_PROVIDER</code> é apenas um rótulo, enviado no header{' '}
+                <code>X-Lexio-Video-Provider</code> e no corpo. As variáveis estão logo abaixo, em “Saúde do Provedor”.
+              </p>
+              <p>
+                <strong>3. Renderer local do navegador</strong> — fallback final, sem IA de vídeo real: compõe um vídeo a
+                partir de imagens/slides localmente quando nenhum provedor está configurado.
+              </p>
+            </div>
+            <p className="text-[var(--v2-ink-faint)]">
+              <strong>Onde é usado:</strong> (a) este pipeline de vídeo (11 agentes); (b) a skill <code>generate_video</code>{' '}
+              do Chat; (c) o <strong>roteiro de vídeo do Caderno</strong> (Estúdio), que renderiza e persiste o MP4 pelo
+              provedor externo quando a flag <strong>FF_NOTEBOOK_STUDIO_VIDEO</strong> está ligada (Configurações → Recursos
+              beta). O consumo de vídeo é registrado em Usos e Custos e na Administração da plataforma (fase{' '}
+              <strong>media_video_render</strong>).
+            </p>
+          </div>
+
+          <div className={`${V2_AGENT_CONFIG_PANEL_BASE} space-y-2 text-[11px] leading-5`}>
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-[var(--v2-ink-strong)]">Saúde do Provedor Externo de Vídeo</p>
               <button
@@ -152,7 +192,7 @@ export default function VideoPipelineConfigCard() {
                 Fallback opcional (nível 2). O caminho recomendado é o provedor <strong>fal.ai</strong> com a sua
                 chave no agente <strong>Gerador de Clipes de Vídeo</strong> — não exige nenhuma variável de ambiente.
               </p>
-              <p><strong>Env vars esperadas:</strong> VITE_EXTERNAL_VIDEO_PROVIDER, VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT, VITE_EXTERNAL_VIDEO_PROVIDER_API_KEY, VITE_EXTERNAL_VIDEO_PROVIDER_STATUS_ENDPOINT.</p>
+              <p><strong>Env vars esperadas:</strong> VITE_EXTERNAL_VIDEO_PROVIDER, VITE_EXTERNAL_VIDEO_PROVIDER_ENDPOINT, VITE_EXTERNAL_VIDEO_PROVIDER_API_KEY, VITE_EXTERNAL_VIDEO_PROVIDER_STATUS_ENDPOINT, VITE_EXTERNAL_VIDEO_PROVIDER_POLL_INTERVAL_MS (padrão 4000), VITE_EXTERNAL_VIDEO_PROVIDER_TIMEOUT_MS (padrão 180000). Aliases legados ainda aceitos: VITE_LITERAL_VIDEO_PROVIDER, _ENDPOINT, _API_KEY, _STATUS_ENDPOINT, _POLL_INTERVAL_MS, _POLL_TIMEOUT_MS.</p>
               <p className="mt-1"><strong>Contrato do endpoint:</strong> POST JSON com prompt, duration_seconds, aspect_ratio, scene_number, part_number e provider; responda com url/video_url/output_url ou com job_id/poll_url para polling posterior.</p>
             </div>
 

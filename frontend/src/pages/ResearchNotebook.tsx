@@ -49,6 +49,7 @@ import { getOpenRouterKey } from '../lib/generation-service'
 import { loadResearchNotebookModels, loadVideoPipelineModels } from '../lib/model-config'
 import {
   createUsageExecutionRecord,
+  type UsageExecutionRecord,
   type UsageFunctionKey,
 } from '../lib/cost-analytics'
 import { materializeExistingStudioArtifactExports, materializeStudioArtifactForNotebook } from '../lib/notebook-studio-artifact-persistence'
@@ -2782,7 +2783,8 @@ Instruções:
     const notebookTitle = options?.notebookTitle ?? activeNotebook?.title ?? ''
 
     const freshNotebook = await getFreshNotebookOrThrow(notebookId)
-    const materializedArtifact = await materializeStudioArtifactForNotebook({ uid: userId, notebookId, artifact })
+    const mediaExecutions: UsageExecutionRecord[] = []
+    const materializedArtifact = await materializeStudioArtifactForNotebook({ uid: userId, notebookId, artifact }, mediaExecutions)
     const updatedArtifacts = [...freshNotebook.artifacts, materializedArtifact]
 
     // Use the correct cost function key so video/audio/presentation costs
@@ -2815,7 +2817,7 @@ Instruções:
       })
     )
 
-    const updatedExecutions = [...(freshNotebook.llm_executions || []), ...newExecutions]
+    const updatedExecutions = [...(freshNotebook.llm_executions || []), ...newExecutions, ...mediaExecutions]
 
     await updateResearchNotebook(userId, notebookId, {
       artifacts: updatedArtifacts,
