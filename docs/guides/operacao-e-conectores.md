@@ -88,6 +88,18 @@ listar/ler arquivos do Drive e buscar/ler e-mails; criar rascunho no Gmail pede 
 > (publicação ampla), o Google exige verificação do app. Para uso próprio, mantenha-se como
 > usuário de teste.
 
+> 🔧 **"Falha ao carregar o Google Identity Services"** — o script da GIS é servido de
+> `https://accounts.google.com/gsi/client` e precisa estar liberado na **CSP**. Já consta em
+> `frontend/index.html` (GitHub Pages) e em `firebase.json` (`script-src`/`script-src-elem`,
+> Firebase Hosting). Se você mantém uma CSP própria (proxy/CDN/domínio customizado), inclua
+> `https://accounts.google.com` em `script-src` **e** `script-src-elem`. Outra causa comum é a
+> **origem não autorizada**: confira as Origens JavaScript do Client ID (passo 4 acima).
+
+> ℹ️ **Não confunda com a "verificação de branding" do Google.** Para conectar o **seu próprio**
+> Drive/Gmail, basta ser **usuário de teste** — verificação NÃO é necessária. A verificação
+> (página inicial pública sem login, nome do app, propriedade do domínio, política de
+> privacidade) só é exigida para liberar o conector a **usuários externos** em produção.
+
 ---
 
 ## 5. Validação E2E (depois de ligar as flags)
