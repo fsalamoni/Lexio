@@ -11,7 +11,7 @@
  * pairing token to paste into Lexio → Configurações → Pasta local (PC).
  */
 import fs from 'node:fs'
-import { resolveConfig, getConfigPath } from '../src/config.mjs'
+import { resolveConfig, persistRoots, getConfigPath } from '../src/config.mjs'
 import { startSidecarServer, SIDECAR_PORT, SIDECAR_HOST } from '../src/server.mjs'
 
 const pkgVersion = readVersion()
@@ -24,18 +24,20 @@ if (argv.help) {
 
 const config = resolveConfig(argv)
 
-// Ensure the workspace root exists so the agent has somewhere to work.
-try {
-  fs.mkdirSync(config.root, { recursive: true })
-} catch (err) {
-  console.error(`Não foi possível criar/abrir a pasta de trabalho "${config.root}": ${err.message}`)
-  process.exit(1)
+// Ensure each authorized folder exists so the agent has somewhere to work.
+for (const dir of config.roots ?? [config.root]) {
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+  } catch (err) {
+    console.error(`Não foi possível criar/abrir a pasta de trabalho "${dir}": ${err.message}`)
+    process.exit(1)
+  }
 }
 
 const log = (msg) => console.log(`[lexio-desktop] ${msg}`)
 
 const server = startSidecarServer({
-  config: { ...config, version: pkgVersion },
+  config: { ...config, version: pkgVersion, persistRoots },
   token: config.token,
   log,
 })
@@ -57,12 +59,19 @@ function parseArgs(args) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
     if (arg === '--help' || arg === '-h') out.help = true
-    else if (arg === '--root') out.root = args[++i]
+    else if (arg === '--root') addRoot(out, args[++i])
+    else if (arg.startsWith('--root=')) addRoot(out, arg.slice('--root='.length))
     else if (arg === '--permissions') out.permissions = args[++i]
-    else if (arg.startsWith('--root=')) out.root = arg.slice('--root='.length)
     else if (arg.startsWith('--permissions=')) out.permissions = arg.slice('--permissions='.length)
   }
   return out
+}
+
+/** `--root` is repeatable; collect into rootList, keep the first as primary. */
+function addRoot(out, value) {
+  if (typeof value !== 'string' || !value.trim()) return
+  ;(out.rootList ??= []).push(value)
+  if (out.root === undefined) out.root = value
 }
 
 function readVersion() {
@@ -79,7 +88,9 @@ function printBanner(config) {
   console.log(`\n${line}`)
   console.log('  Lexio Desktop Sidecar — ativo')
   console.log(line)
-  console.log(`  Pasta de trabalho : ${config.root}`)
+  const rootsList = config.roots ?? [config.root]
+  console.log(`  Pasta${rootsList.length > 1 ? 's' : ' '} de trabalho : ${rootsList[0]}`)
+  for (const extra of rootsList.slice(1)) console.log(`                      ${extra}`)
   console.log(`  Permissões        : ${config.permissions.join(', ')}`)
   console.log(`  Endpoint          : ws://${SIDECAR_HOST}:${SIDECAR_PORT}`)
   console.log(`  Config            : ${getConfigPath()}`)
@@ -87,7 +98,7 @@ function printBanner(config) {
   console.log('  COLE este token de pareamento no Lexio →')
   console.log('  Configurações → Pasta local (PC):\n')
   console.log(`      ${config.token}\n`)
-  console.log('  O agente só pode ler/escrever/executar DENTRO da pasta acima.')
+  console.log('  O agente só pode ler/escrever/executar DENTRO das pastas acima.')
   console.log(`${line}\n`)
 }
 

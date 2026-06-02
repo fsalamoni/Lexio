@@ -45,6 +45,70 @@ export function resolveInsideRoot(root, candidate) {
   return resolved
 }
 
+/**
+ * Resolve a candidate path against a LIST of allowed roots (the allowlist the
+ * user built by approving folders). Returns the first resolution that stays
+ * inside one of the roots, along with which root matched. Relative paths always
+ * resolve under the first (primary) root. Throws when the path is inside none.
+ *
+ * @param {string[]} roots absolute, already-resolved allowed roots
+ * @param {string} candidate
+ * @returns {{ path: string, root: string }}
+ */
+export function resolveInsideRoots(roots, candidate) {
+  const list = (Array.isArray(roots) ? roots : []).filter(r => typeof r === 'string' && r.trim())
+  if (list.length === 0) {
+    throw new SandboxError('Nenhuma pasta de trabalho autorizada.', 'NO_ROOTS')
+  }
+  for (const root of list) {
+    try {
+      const resolved = resolveInsideRoot(root, candidate)
+      return { path: resolved, root: path.resolve(root) }
+    } catch {
+      // try the next allowed root
+    }
+  }
+  throw new SandboxError(
+    `Caminho "${candidate}" está fora de todas as pastas autorizadas.`,
+    'PATH_OUTSIDE_ROOT',
+  )
+}
+
+/**
+ * Directories that must NEVER be granted as a workspace root, even with explicit
+ * user approval — filesystem/drive roots, OS/system directories, and secret
+ * stores. Defense-in-depth so an approval can't accidentally expose the whole
+ * machine or credential files. Checked against both POSIX and Windows layouts so
+ * the rule holds regardless of where the sidecar runs.
+ */
+export function isForbiddenRoot(dir) {
+  if (typeof dir !== 'string' || !dir.trim()) return true
+  const resolved = path.resolve(dir)
+  const lower = resolved.toLowerCase()
+
+  // Filesystem / drive roots (e.g. "/", "C:\").
+  if (resolved === path.parse(resolved).root) return true
+
+  const systemPrefixes = [
+    // POSIX
+    '/etc', '/bin', '/sbin', '/usr', '/lib', '/lib64', '/boot', '/dev',
+    '/proc', '/sys', '/var', '/run', '/root', '/private', '/system',
+    // Windows
+    'c:\\windows', 'c:\\program files', 'c:\\program files (x86)',
+    'c:\\programdata', 'c:\\system volume information',
+  ]
+  for (const prefix of systemPrefixes) {
+    if (lower === prefix || lower.startsWith(`${prefix}/`) || lower.startsWith(`${prefix}\\`)) {
+      return true
+    }
+  }
+
+  // Secret/credential stores and the sidecar's own config dir — never grantable.
+  if (/(^|[\\/])\.(lexio|ssh|gnupg|aws|kube|docker)([\\/]|$)/.test(lower)) return true
+
+  return false
+}
+
 /** Convert a simple glob (`*.pdf`, `notes*`, `*report*`) to a RegExp. */
 export function globToRegExp(glob) {
   const escaped = String(glob)

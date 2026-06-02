@@ -48,8 +48,13 @@ conexão**. A partir daí, no `/chat`, o agente usa as ferramentas
 
 ## Segurança
 
-- **Sandbox de caminho:** toda operação é resolvida e validada contra a raiz da
-  pasta; tentativas de `../` ou caminhos absolutos fora da raiz são recusadas.
+- **Sandbox de caminho:** toda operação é resolvida e validada contra **uma ou
+  mais pastas autorizadas** (allowlist); tentativas de `../` ou caminhos fora de
+  todas elas são recusadas. Pastas de sistema/credenciais (`/`, `C:\Windows`,
+  `~/.ssh`, `~/.aws`, `~/.lexio`…) nunca podem ser autorizadas.
+- **Autorizar pastas em runtime:** o op `grant` adiciona/remove pastas com a
+  aprovação do usuário (sessão = "permitir desta vez", `persist` = "permitir
+  sempre"). Use `--root` repetido para liberar várias já na inicialização.
 - **Permissões explícitas:** `write`/`execute` só funcionam se concedidas via
   `--permissions`.
 - **Bloqueio de comandos destrutivos:** `rm -rf`, `sudo`, `curl|bash`, fork

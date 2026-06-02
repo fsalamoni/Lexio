@@ -15,7 +15,8 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { exec } from 'node:child_process'
 import {
-  resolveInsideRoot,
+  resolveInsideRoots,
+  isForbiddenRoot,
   matchesAnyGlob,
   isBlockedByGlob,
   findDestructivePattern,
@@ -38,7 +39,13 @@ const SHELL_OUTPUT_CAP = 12_000
  * @param {string} config.version
  */
 export function createHandler(config) {
-  const root = path.resolve(config.root)
+  // Allowlist of authorized roots. Mutable: the `grant` op can add/remove roots
+  // at runtime (session-only or persisted) after the user approves a folder.
+  let roots = Array.isArray(config.roots) && config.roots.length
+    ? config.roots.map(r => path.resolve(r))
+    : [path.resolve(config.root)]
+  // Optional callback to persist the allowlist across restarts ("permitir sempre").
+  const persistRoots = typeof config.persistRoots === 'function' ? config.persistRoots : null
   const permissions = Array.isArray(config.permissions) ? config.permissions : ['read']
   const allowedGlobs = config.allowedGlobs ?? []
   const blockedGlobs = config.blockedGlobs ?? ['.env', '*.key', '*.pem', 'id_rsa*']
@@ -63,7 +70,8 @@ export function createHandler(config) {
       return {
         pong: true,
         version,
-        root,
+        root: roots[0],
+        roots,
         permissions,
         platform: process.platform,
       }
@@ -85,12 +93,57 @@ export function createHandler(config) {
       return runGitOp(op, payload)
     }
 
+    if (type === 'grant') {
+      return manageRoots(op, payload)
+    }
+
     throw new SandboxError(`Operação não suportada: ${type}/${op}`, 'UNSUPPORTED_OP')
+  }
+
+  /**
+   * Manage the authorized-folder allowlist at runtime. The connection is already
+   * authenticated by the pairing token (= the user), and the UI gates this
+   * behind an explicit approval, so granting is allowed — but never for system
+   * or secret directories (`isForbiddenRoot`). With `persist: true` the grant is
+   * written to the config file so it survives restarts ("permitir sempre");
+   * otherwise it lasts only for this running process ("permitir desta vez").
+   */
+  async function manageRoots(op, payload = {}) {
+    if (op === 'list') return { roots }
+
+    if (op === 'add') {
+      const candidate = String(payload.path ?? '').trim()
+      if (!candidate) throw new SandboxError('Informe a pasta a autorizar.', 'EMPTY_PATH')
+      const resolved = path.resolve(candidate)
+      if (isForbiddenRoot(resolved)) {
+        throw new SandboxError(`A pasta "${resolved}" é de sistema/credenciais e não pode ser autorizada.`, 'FORBIDDEN_ROOT')
+      }
+      await fs.mkdir(resolved, { recursive: true })
+      const key = process.platform === 'win32' ? resolved.toLowerCase() : resolved
+      const already = roots.some(r => (process.platform === 'win32' ? r.toLowerCase() : r) === key)
+      if (!already) roots = [...roots, resolved]
+      if (payload.persist && persistRoots) {
+        try { roots = persistRoots(roots).map(r => path.resolve(r)) } catch { /* keep in-memory grant */ }
+      }
+      return { roots, added: resolved, persisted: Boolean(payload.persist) }
+    }
+
+    if (op === 'remove') {
+      const candidate = path.resolve(String(payload.path ?? '').trim())
+      const key = process.platform === 'win32' ? candidate.toLowerCase() : candidate
+      roots = roots.filter(r => (process.platform === 'win32' ? r.toLowerCase() : r) !== key)
+      if (payload.persist && persistRoots) {
+        try { roots = persistRoots(roots).map(r => path.resolve(r)) } catch { /* keep in-memory state */ }
+      }
+      return { roots, removed: candidate, persisted: Boolean(payload.persist) }
+    }
+
+    throw new SandboxError(`Operação grant não suportada: ${op}`, 'UNSUPPORTED_OP')
   }
 
   async function readFile(payload) {
     assertPermission(permissions, 'read')
-    const target = resolveInsideRoot(root, payload.path)
+    const target = resolveInsideRoots(roots, payload.path).path
     const base = path.basename(target)
     if (isBlockedByGlob(base, blockedGlobs)) {
       throw new SandboxError(`Arquivo "${base}" está na lista de bloqueio.`, 'BLOCKED')
@@ -108,7 +161,7 @@ export function createHandler(config) {
 
   async function listDir(payload) {
     assertPermission(permissions, 'read')
-    const target = resolveInsideRoot(root, payload.path)
+    const target = resolveInsideRoots(roots, payload.path).path
     const pattern = typeof payload.pattern === 'string' && payload.pattern.trim() ? payload.pattern.trim() : undefined
     const dirents = await fs.readdir(target, { withFileTypes: true })
     const entries = []
@@ -129,7 +182,7 @@ export function createHandler(config) {
 
   async function writeFile(payload) {
     assertPermission(permissions, 'write')
-    const target = resolveInsideRoot(root, payload.path)
+    const target = resolveInsideRoots(roots, payload.path).path
     const base = path.basename(target)
     if (isBlockedByGlob(base, blockedGlobs)) {
       throw new SandboxError(`Escrita em "${base}" bloqueada pela lista de bloqueio.`, 'BLOCKED')
@@ -149,9 +202,9 @@ export function createHandler(config) {
 
   async function deleteEntry(payload) {
     assertPermission(permissions, 'delete')
-    const target = resolveInsideRoot(root, payload.path)
-    if (path.resolve(target) === root) {
-      throw new SandboxError('Não é permitido apagar a raiz da pasta de trabalho.', 'ROOT_PROTECTED')
+    const target = resolveInsideRoots(roots, payload.path).path
+    if (roots.some(r => path.resolve(target) === r)) {
+      throw new SandboxError('Não é permitido apagar a raiz de uma pasta de trabalho.', 'ROOT_PROTECTED')
     }
     const base = path.basename(target)
     if (isBlockedByGlob(base, blockedGlobs)) {
@@ -170,10 +223,12 @@ export function createHandler(config) {
 
   async function renameEntry(payload) {
     assertPermission(permissions, 'rename')
-    const from = resolveInsideRoot(root, payload.from ?? payload.path)
-    const to = resolveInsideRoot(root, payload.to ?? payload.target_path)
-    if (path.resolve(from) === root || path.resolve(to) === root) {
-      throw new SandboxError('Não é permitido renomear a raiz da pasta de trabalho.', 'ROOT_PROTECTED')
+    // `from` and `to` may live in different authorized roots (move between
+    // folders), as long as each one is inside the allowlist.
+    const from = resolveInsideRoots(roots, payload.from ?? payload.path).path
+    const to = resolveInsideRoots(roots, payload.to ?? payload.target_path).path
+    if (roots.some(r => path.resolve(from) === r || path.resolve(to) === r)) {
+      throw new SandboxError('Não é permitido renomear/mover a raiz de uma pasta de trabalho.', 'ROOT_PROTECTED')
     }
     const fromBase = path.basename(from)
     const toBase = path.basename(to)
@@ -190,7 +245,7 @@ export function createHandler(config) {
 
   async function runGitOp(op, payload = {}) {
     assertPermission(permissions, 'execute')
-    const cwd = payload.cwd ? resolveInsideRoot(root, payload.cwd) : root
+    const cwd = payload.cwd ? resolveInsideRoots(roots, payload.cwd).path : roots[0]
     switch (op) {
       case 'status': return gitStatus(cwd)
       case 'diff': return gitDiff(cwd, payload)
@@ -209,7 +264,7 @@ export function createHandler(config) {
     if (destructive) {
       throw new SandboxError(`Comando bloqueado por segurança (padrão: ${destructive}).`, 'DESTRUCTIVE')
     }
-    const cwd = payload.cwd ? resolveInsideRoot(root, payload.cwd) : root
+    const cwd = payload.cwd ? resolveInsideRoots(roots, payload.cwd).path : roots[0]
     const timeoutSec = Math.min(Number(payload.timeout_sec) > 0 ? Number(payload.timeout_sec) : 10, SHELL_MAX_TIMEOUT_SEC)
     return new Promise((resolve, reject) => {
       exec(cmd, { cwd, timeout: timeoutSec * 1000, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
@@ -225,5 +280,12 @@ export function createHandler(config) {
     })
   }
 
-  return { handle, dispatch, root, permissions, version }
+  return {
+    handle,
+    dispatch,
+    get roots() { return roots },
+    get root() { return roots[0] },
+    permissions,
+    version,
+  }
 }
