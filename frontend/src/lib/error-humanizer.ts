@@ -11,6 +11,10 @@ const ERROR_PATTERNS: Array<{ pattern: RegExp; message: string; suggestion?: str
 
   // LLM/API specific (must come before generic HTTP status patterns)
   { pattern: /key limit exceeded|monthly limit/i, message: 'Limite mensal da chave atingido (não é falta de saldo)', suggestion: 'Cada chave de API pode ter um limite de gasto mensal independente do saldo da conta. Aumente o limite da chave no painel do provedor (ex.: openrouter.ai/settings/keys) ou troque para outra chave.' },
+  // Account out of credits — OpenRouter's "Insufficient credits" wording (distinct
+  // from "requires more credits / can only afford", which means the single request
+  // is too big and is handled by the generic credit pattern below).
+  { pattern: /insufficient\s*credits|insufficient_quota|openrouter\.ai\/settings\/credits/i, message: 'Sem créditos no provedor de IA (OpenRouter)', suggestion: 'Sua conta OpenRouter está sem créditos. Adicione créditos em https://openrouter.ai/settings/credits (ou ajuste a chave em Configurações → Chaves de API) e tente novamente.' },
   { pattern: /quota|billing|insufficient.*funds|more credits|can only afford/i, message: 'Créditos do provedor esgotados', suggestion: 'Verifique o saldo da sua chave de API nas configurações ou reduza o volume da solicitação.' },
   { pattern: /context.*length|token.*limit|max.*tokens/i, message: 'Texto muito longo para o modelo', suggestion: 'Reduza o tamanho da solicitação ou use um modelo com janela maior.' },
   { pattern: /invalid.*api.*key|authentication.*failed/i, message: 'Chave de API inválida', suggestion: 'Verifique suas chaves em Configurações > Chaves de API.' },

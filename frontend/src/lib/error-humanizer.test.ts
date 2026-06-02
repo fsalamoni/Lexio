@@ -49,6 +49,12 @@ describe('error-humanizer', () => {
     expect(result.title).toBe('Créditos do provedor esgotados')
   })
 
+  it('handles OpenRouter "Insufficient credits" (account out of credits) distinctly', () => {
+    const result = humanizeError(new Error('OpenRouter API error 402: {"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402}}'))
+    expect(result.title).toBe('Sem créditos no provedor de IA (OpenRouter)')
+    expect(result.detail).toContain('openrouter.ai/settings/credits')
+  })
+
   it('handles Firebase permission denied', () => {
     const result = humanizeError({ code: 'PERMISSION_DENIED', message: 'Missing permissions' })
     expect(result.title).toBe('Permissão negada')

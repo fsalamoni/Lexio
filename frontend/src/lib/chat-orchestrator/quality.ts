@@ -1,5 +1,6 @@
 import type { ChatTrailEvent } from '../firestore-types'
 import { dispatchSpecialistAgent } from './dispatch'
+import { isOperationalFailureMarkdown } from './operational-failure'
 import type { SkillContext } from './types'
 
 export interface CriticVerdict {
@@ -63,8 +64,6 @@ ${draft}
     onToken,
   })
 
-  const verdict = parseVerdict(output)
-
   const responseEvent: ChatTrailEvent = {
     type: 'agent_response',
     agent_key: criticAgentKey,
@@ -73,6 +72,15 @@ ${draft}
     ts: new Date().toISOString(),
   }
   ctx.emit(responseEvent)
+
+  // If the critic call itself failed operationally (e.g., OpenRouter 402 — no
+  // credits), it can't judge anything. Accept the current draft instead of
+  // scoring it 0 and forcing a refine loop. The failure is already on the trail.
+  if (isOperationalFailureMarkdown(output)) {
+    return { score: 0, reasons: ['Crítico indisponível (falha do provedor) — rascunho aceito sem nova iteração.'], shouldStop: true }
+  }
+
+  const verdict = parseVerdict(output)
 
   const criticEvent: ChatTrailEvent = {
     type: 'critic',

@@ -269,6 +269,13 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
         }
         draft = result.final_answer
         partialIterations = i
+        // Provider/operational failure (e.g., OpenRouter 402 — no credits): stop
+        // immediately with that single, clear message. Never run the critic on a
+        // failure draft or loop on it (that produced the messy 3× repeat trail).
+        if (isOperationalFailureMarkdown(result.final_answer)) {
+          stopReason = 'final_answer'
+          break
+        }
         // Always attempt a critic pass before accepting the final answer.
         // The critic now runs iteratively — even after a skill declares
         // final_answer, we validate and can loop back for refinements.

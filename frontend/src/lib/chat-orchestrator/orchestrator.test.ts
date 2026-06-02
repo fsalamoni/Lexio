@@ -229,6 +229,28 @@ describe('runChatTurn', () => {
     }
   })
 
+  it('stops immediately on a provider/operational failure — no critic, no loop', async () => {
+    const events: ChatTrailEvent[] = []
+    // Simulate the orchestrator LLM failing (e.g., OpenRouter 402) by returning
+    // the synthetic operational-failure final answer the bridge produces.
+    const llmCall = vi.fn(async () => ({
+      raw: JSON.stringify({
+        tool: 'submit_final_answer',
+        args: { markdown: '## Falha operacional\nProvedor indisponível.\n\n- Motivo: Sem créditos no provedor de IA (OpenRouter)' },
+      }),
+      usage: null,
+    })) satisfies OrchestratorLLMCall
+
+    const result = await runChatTurn(makeInput({ user_input: 'oi', llmCall, onTrail: e => events.push(e) }))
+
+    expect(result.status).toBe('done')
+    expect(result.assistant_markdown).toContain('Falha operacional')
+    // The critic must NOT run on a failure draft, and there must be no loop-guard repeat.
+    expect(events.some(e => e.type === 'agent_call' && e.agent_key === 'chat_critic')).toBe(false)
+    expect(events.some(e => e.type === 'error' && /Loop de orquestração/.test(e.message))).toBe(false)
+    expect(llmCall).toHaveBeenCalledTimes(1)
+  })
+
   it('respects maxIterations when the orchestrator never finalises', async () => {
     const events: ChatTrailEvent[] = []
     const llmCall = vi.fn(async () => ({
