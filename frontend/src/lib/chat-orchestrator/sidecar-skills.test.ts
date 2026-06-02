@@ -108,6 +108,36 @@ describe('sidecar approval gate', () => {
   })
 })
 
+describe('multi-PC approval UX (FF_CHAT_PC_DEVICES)', () => {
+  it('offers permitir desta vez / sempre / negar when the devices flag is on', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_PC_APPROVALS: true, FF_CHAT_PC_DEVICES: true })
+    const ctx = makeCtx({ createApprovalRequest: vi.fn().mockResolvedValue('a1') })
+    const result = await skillByName('write_file').run({ path: 'out/a.txt', content: 'oi' }, ctx)
+    expect(result.awaiting_user?.options).toEqual(['permitir desta vez', 'permitir sempre', 'negar'])
+  })
+
+  it('keeps the legacy buttons when the devices flag is off', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_PC_APPROVALS: true })
+    const ctx = makeCtx({ createApprovalRequest: vi.fn().mockResolvedValue('a1') })
+    const result = await skillByName('write_file').run({ path: 'out/a.txt', content: 'oi' }, ctx)
+    expect(result.awaiting_user?.options).toEqual(['aprovar', 'rejeitar', 'ajustar'])
+  })
+
+  it('exposes grant_folder only with the devices flag, and it pauses for approval', async () => {
+    clearRuntimeFeatureFlags()
+    expect(buildSidecarSkills().map(s => s.name)).not.toContain('grant_folder')
+
+    setRuntimeFeatureFlags({ FF_CHAT_PC_APPROVALS: true, FF_CHAT_PC_DEVICES: true })
+    expect(buildSidecarSkills().map(s => s.name)).toContain('grant_folder')
+
+    const ctx = makeCtx({ createApprovalRequest: vi.fn().mockResolvedValue('g1') })
+    const result = await skillByName('grant_folder').run({ path: 'C:/Casos/Cliente X' }, ctx)
+    expect(result.awaiting_user?.resume_tool).toBe('grant_folder')
+    expect(result.awaiting_user?.resume_args?.approved).toBe(true)
+    expect(result.awaiting_user?.options).toEqual(['permitir desta vez', 'permitir sempre', 'negar'])
+  })
+})
+
 describe('sidecar skill exposure', () => {
   it('exposes delete_file/rename_file only when the gate is on', () => {
     clearRuntimeFeatureFlags()

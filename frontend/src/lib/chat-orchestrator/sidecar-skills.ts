@@ -18,6 +18,8 @@
 import type { ChatSidecarPermission, ChatTrailEvent } from '../firestore-types'
 import type { ChatSidecarAuditEntryInput, Skill, SkillContext, SkillResult } from './types'
 import { DEFAULT_SIDECAR_HOST, DEFAULT_SIDECAR_PORT } from './sidecar-config'
+import { LEGACY_DEVICE_ID, loadSidecarDevices } from './sidecar-devices'
+import { addRule, loadSidecarAllowlist, matchAllowlist, saveSidecarAllowlist } from './sidecar-allowlist'
 import { loadGithubConnectorConfig } from './github-config'
 import { isEnabled } from '../feature-flags'
 
@@ -129,22 +131,95 @@ async function requestSidecarApproval(
     approval_id: approvalId,
     message: opts.title,
   })
-  const question = [
-    opts.title,
-    '',
-    opts.summary,
-    '',
-    'Responda "aprovar" para autorizar, "rejeitar" para cancelar ou "ajustar" para mudar antes de executar.',
-  ].join('\n')
+  // With the multi-PC connector on, offer "permitir desta vez / sempre / negar";
+  // otherwise keep the legacy aprovar/rejeitar/ajustar buttons.
+  const offerRemember = devicesFeatureActive()
+  const options = offerRemember
+    ? ['permitir desta vez', 'permitir sempre', 'negar']
+    : ['aprovar', 'rejeitar', 'ajustar']
+  const instruction = offerRemember
+    ? 'Responda "permitir desta vez" para autorizar só agora, "permitir sempre" para autorizar esta pasta daqui em diante, ou "negar" para cancelar.'
+    : 'Responda "aprovar" para autorizar, "rejeitar" para cancelar ou "ajustar" para mudar antes de executar.'
+  const question = [opts.title, '', opts.summary, '', instruction].join('\n')
   return {
     tool_message: `Aguardando aprovação do usuário (${approvalId}): ${opts.title}`,
     awaiting_user: {
       question,
-      options: ['aprovar', 'rejeitar', 'ajustar'],
+      options,
       approval_id: approvalId,
       resume_tool: opts.resumeTool,
       resume_args: { ...opts.resumeArgs, approved: true, approval_id: approvalId },
     },
+  }
+}
+
+// ── Allowlist ("permitir sempre") integration — Onda 4 ────────────────────────
+
+/** Multi-PC features (per-device allowlist) are active only behind the flag. */
+function devicesFeatureActive(): boolean {
+  return isEnabled('FF_CHAT_PC_DEVICES')
+}
+
+/** Directory portion of a path (handles both "/" and "\" separators). */
+function dirOf(p: string): string {
+  const s = String(p ?? '').replace(/[\\/]+$/, '')
+  const idx = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'))
+  return idx > 0 ? s.slice(0, idx) : s
+}
+
+async function activeDeviceIdFor(ctx: SkillContext): Promise<string> {
+  try {
+    const state = await loadSidecarDevices(ctx.uid)
+    return state.activeId ?? LEGACY_DEVICE_ID
+  } catch {
+    return LEGACY_DEVICE_ID
+  }
+}
+
+/**
+ * True when a persisted "permitir sempre" rule already authorizes `op` on
+ * `path` for the active PC — so the action runs without prompting again.
+ */
+async function isPreApproved(ctx: SkillContext, op: ChatSidecarPermission, path: string): Promise<boolean> {
+  if (!devicesFeatureActive() || !path) return false
+  try {
+    const [rules, deviceId] = await Promise.all([loadSidecarAllowlist(ctx.uid), activeDeviceIdFor(ctx)])
+    return matchAllowlist(rules, deviceId, op, path) !== null
+  } catch {
+    return false
+  }
+}
+
+/**
+ * After the user approved with "permitir sempre", persist an allowlist grant for
+ * `scopeRoot` (a folder): store the rule and ask the sidecar to add the folder
+ * to its own persisted roots so it survives restarts. Best-effort; never throws.
+ */
+async function rememberScopeIfRequested(
+  ctx: SkillContext,
+  op: ChatSidecarPermission,
+  scopeRoot: string,
+  remember: boolean,
+): Promise<void> {
+  if (!remember || !devicesFeatureActive() || !scopeRoot) return
+  try {
+    const deviceId = await activeDeviceIdFor(ctx)
+    const rules = await loadSidecarAllowlist(ctx.uid)
+    await saveSidecarAllowlist(addRule(rules, { device_id: deviceId, root: scopeRoot, ops: [op] }), ctx.uid)
+  } catch {
+    // allowlist persistence is best-effort
+  }
+  try {
+    const wsUrl = resolveSidecarWsUrl(ctx)
+    if (wsUrl) {
+      await callSidecar(
+        { id: uid(), type: 'grant', op: 'add', payload: { path: scopeRoot, persist: true } },
+        ctx.signal,
+        wsUrl,
+      )
+    }
+  } catch {
+    // mirroring the grant on the sidecar is best-effort
   }
 }
 
@@ -160,7 +235,7 @@ function resolveSidecarWsUrl(ctx: SkillContext): string | null {
 /** Tipos de mensagem trocadas com o sidecar. */
 interface SidecarRequest {
   id: string
-  type: 'fs' | 'shell' | 'git'
+  type: 'fs' | 'shell' | 'git' | 'grant'
   op: string
   payload: Record<string, unknown>
 }
@@ -475,6 +550,8 @@ interface WriteFileArgs {
   approved?: boolean
   /** Approval id threaded from the proposal, for the executed audit entry. */
   approval_id?: string
+  /** Set when the user chose "permitir sempre" — persist an allowlist grant. */
+  remember_scope?: boolean
 }
 
 const writeFileSkill: Skill<WriteFileArgs> = {
@@ -493,7 +570,8 @@ const writeFileSkill: Skill<WriteFileArgs> = {
     if (!path) return { tool_message: 'Erro: "path" é obrigatório.' }
     if (!content) return { tool_message: 'Erro: "content" é obrigatório.' }
 
-    if (approvalGateActive() && args.approved !== true) {
+    const preApprovedWrite = await isPreApproved(ctx, 'write', path)
+    if (approvalGateActive() && args.approved !== true && !preApprovedWrite) {
       return requestSidecarApproval(ctx, {
         op: 'write',
         title: `Escrever arquivo: ${path}`,
@@ -504,6 +582,7 @@ const writeFileSkill: Skill<WriteFileArgs> = {
         resumeArgs: { path, content },
       })
     }
+    await rememberScopeIfRequested(ctx, 'write', dirOf(path), args.remember_scope === true)
 
     const wsUrl = resolveSidecarWsUrl(ctx)
     const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
@@ -561,6 +640,8 @@ interface ShellArgs {
   approved?: boolean
   /** Approval id threaded from the proposal, for the executed audit entry. */
   approval_id?: string
+  /** Set when the user chose "permitir sempre" — persist an allowlist grant. */
+  remember_scope?: boolean
 }
 
 const shellSkill: Skill<ShellArgs> = {
@@ -607,7 +688,8 @@ const shellSkill: Skill<ShellArgs> = {
       }
     }
 
-    if (approvalGateActive() && args.approved !== true) {
+    const preApprovedShell = cwd ? await isPreApproved(ctx, 'execute', cwd) : false
+    if (approvalGateActive() && args.approved !== true && !preApprovedShell) {
       return requestSidecarApproval(ctx, {
         op: 'shell',
         title: `Executar comando: ${cmd}`,
@@ -618,6 +700,7 @@ const shellSkill: Skill<ShellArgs> = {
         resumeArgs: { cmd, ...(cwd ? { cwd } : {}), timeout_sec: timeoutSec },
       })
     }
+    if (cwd) await rememberScopeIfRequested(ctx, 'execute', cwd, args.remember_scope === true)
 
     const wsUrl = resolveSidecarWsUrl(ctx)
     const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
@@ -669,6 +752,7 @@ interface DeleteFileArgs {
   path?: string
   approved?: boolean
   approval_id?: string
+  remember_scope?: boolean
 }
 
 const deleteFileSkill: Skill<DeleteFileArgs> = {
@@ -683,7 +767,8 @@ const deleteFileSkill: Skill<DeleteFileArgs> = {
     const path = String(args.path ?? '').trim()
     if (!path) return { tool_message: 'Erro: "path" é obrigatório.' }
 
-    if (approvalGateActive() && args.approved !== true) {
+    const preApprovedDelete = await isPreApproved(ctx, 'delete', path)
+    if (approvalGateActive() && args.approved !== true && !preApprovedDelete) {
       return requestSidecarApproval(ctx, {
         op: 'delete',
         title: `Apagar: ${path}`,
@@ -694,6 +779,7 @@ const deleteFileSkill: Skill<DeleteFileArgs> = {
         resumeArgs: { path },
       })
     }
+    await rememberScopeIfRequested(ctx, 'delete', dirOf(path), args.remember_scope === true)
 
     const wsUrl = resolveSidecarWsUrl(ctx)
     const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
@@ -730,6 +816,7 @@ interface RenameFileArgs {
   to?: string
   approved?: boolean
   approval_id?: string
+  remember_scope?: boolean
 }
 
 const renameFileSkill: Skill<RenameFileArgs> = {
@@ -746,7 +833,9 @@ const renameFileSkill: Skill<RenameFileArgs> = {
     const to = String(args.to ?? '').trim()
     if (!from || !to) return { tool_message: 'Erro: "from" e "to" são obrigatórios.' }
 
-    if (approvalGateActive() && args.approved !== true) {
+    // A move is only pre-approved when BOTH ends sit in already-granted folders.
+    const preApprovedRename = (await isPreApproved(ctx, 'rename', from)) && (await isPreApproved(ctx, 'rename', to))
+    if (approvalGateActive() && args.approved !== true && !preApprovedRename) {
       return requestSidecarApproval(ctx, {
         op: 'rename',
         title: `Renomear/mover: ${from} → ${to}`,
@@ -756,6 +845,10 @@ const renameFileSkill: Skill<RenameFileArgs> = {
         resumeTool: 'rename_file',
         resumeArgs: { from, to },
       })
+    }
+    if (args.remember_scope === true) {
+      await rememberScopeIfRequested(ctx, 'rename', dirOf(from), true)
+      await rememberScopeIfRequested(ctx, 'rename', dirOf(to), true)
     }
 
     const wsUrl = resolveSidecarWsUrl(ctx)
@@ -952,6 +1045,87 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+// ── Skill: Autorizar Pasta (grant) ────────────────────────────────────────────
+
+interface GrantFolderArgs {
+  path?: string
+  approved?: boolean
+  approval_id?: string
+  remember_scope?: boolean
+}
+
+const grantFolderSkill: Skill<GrantFolderArgs> = {
+  name: 'grant_folder',
+  description:
+    'Autoriza o assistente a atuar em uma NOVA pasta do PC (fora das já liberadas). ' +
+    'Use quando o usuário pedir para trabalhar ou organizar em uma pasta ainda não autorizada. ' +
+    'Pede confirmação: "permitir desta vez" libera só nesta sessão; "permitir sempre" memoriza a pasta.',
+  argsHint: {
+    path: 'Caminho absoluto da pasta a autorizar (ex.: "C:\\Casos\\Cliente X")',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const path = String(args.path ?? '').trim()
+    if (!path) return { tool_message: 'Erro: "path" (pasta a autorizar) é obrigatório.' }
+
+    if (approvalGateActive() && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'write',
+        title: `Autorizar pasta: ${path}`,
+        summary:
+          `O assistente quer passar a atuar na pasta "${path}" do seu computador. ` +
+          `Pastas de sistema e de credenciais nunca são autorizadas.`,
+        permissions: ['write'],
+        resourcePath: path,
+        resumeTool: 'grant_folder',
+        resumeArgs: { path },
+      })
+    }
+
+    const persist = args.remember_scope === true
+    const wsUrl = resolveSidecarWsUrl(ctx)
+    const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
+    const useSidecar = sidecarOk && !ctx.mock && !!wsUrl
+
+    if (useSidecar) {
+      const response = await callSidecar(
+        { id: uid(), type: 'grant', op: 'add', payload: { path, persist } },
+        ctx.signal,
+        wsUrl!,
+      )
+      if (!response || !response.ok) {
+        ctx.emit(fsTrailEvent('grant', path, undefined, response?.error))
+        await auditSafe(ctx, {
+          operation: 'grant', actor: 'sidecar', status: 'failed', resource_path: path,
+          approval_id: args.approval_id, message: response?.error ?? 'Sidecar indisponível',
+        })
+        return { tool_message: `Não foi possível autorizar a pasta "${path}": ${response?.error ?? 'Sidecar indisponível'}` }
+      }
+      // When the user chose "sempre", mirror the grant into the allowlist too.
+      if (persist && devicesFeatureActive()) {
+        try {
+          const deviceId = await activeDeviceIdFor(ctx)
+          const rules = await loadSidecarAllowlist(ctx.uid)
+          await saveSidecarAllowlist(addRule(rules, { device_id: deviceId, root: path, ops: 'all' }), ctx.uid)
+        } catch {
+          // best-effort
+        }
+      }
+      ctx.emit(fsTrailEvent('grant', path, persist ? 'autorizada (sempre)' : 'autorizada (sessão)'))
+      await auditSafe(ctx, {
+        operation: 'grant', actor: 'sidecar', status: 'executed', resource_path: path,
+        approval_id: args.approval_id, message: persist ? 'permitir sempre' : 'permitir desta vez',
+      })
+      return {
+        tool_message: `✅ Pasta autorizada${persist ? ' (memorizada para as próximas vezes)' : ' (somente nesta sessão)'}:\n- ${path}`,
+      }
+    }
+    ctx.emit(fsTrailEvent('grant', path, '(modo demonstração)'))
+    return {
+      tool_message: `⚠️ Modo demonstração — pasta NÃO autorizada de fato.\n\nPasta: ${path}\n\nInstale @lexio/desktop para autorizar pastas reais.`,
+    }
+  },
+}
+
 // ── Export ────────────────────────────────────────────────────────────────────
 
 /**
@@ -960,11 +1134,15 @@ function formatBytes(bytes: number): string {
  *
  * The destructive `delete_file`/`rename_file` skills are only exposed when the
  * approval gate (`FF_CHAT_PC_APPROVALS`) is on, so they can never run ungated.
+ * `grant_folder` (authorize a new folder) appears only with the multi-PC flag.
  */
 export function buildSidecarSkills(): Skill[] {
   const base: Skill[] = [readFileSkill, listDirSkill, writeFileSkill, shellSkill]
   if (approvalGateActive()) {
     base.push(deleteFileSkill, renameFileSkill)
+  }
+  if (devicesFeatureActive()) {
+    base.push(grantFolderSkill)
   }
   if (isEnabled('FF_CHAT_PC_GIT')) {
     base.push(...buildGitSkills())
@@ -983,6 +1161,7 @@ export async function checkSidecarStatus(opts?: {
   available: boolean
   version?: string
   root?: string
+  roots?: string[]
   permissions?: string[]
   error?: string
 }> {
@@ -994,8 +1173,14 @@ export async function checkSidecarStatus(opts?: {
     const response = await callSidecar({ id: uid(), type: 'shell', op: 'ping', payload: {} }, controller.signal, wsUrl)
     clearTimeout(timeout)
     if (!response || !response.ok) return { available: false, error: 'Sidecar não respondeu.' }
-    const result = (response.result ?? {}) as { version?: string; root?: string; permissions?: string[] }
-    return { available: true, version: result.version, root: result.root, permissions: result.permissions }
+    const result = (response.result ?? {}) as { version?: string; root?: string; roots?: string[]; permissions?: string[] }
+    return {
+      available: true,
+      version: result.version,
+      root: result.root,
+      roots: Array.isArray(result.roots) ? result.roots : (result.root ? [result.root] : undefined),
+      permissions: result.permissions,
+    }
   } catch {
     return { available: false, error: 'Falha ao conectar (token inválido ou processo parado?).' }
   }

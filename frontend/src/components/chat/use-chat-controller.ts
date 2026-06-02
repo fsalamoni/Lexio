@@ -257,6 +257,11 @@ async function executeApprovalDecision(args: {
     return
   }
 
+  // "permitir sempre" → tell the resumed skill to persist an allowlist grant.
+  if (wantsRememberScope(userInput) && pendingQuestion.resume_args) {
+    pendingQuestion.resume_args = { ...pendingQuestion.resume_args, remember_scope: true }
+  }
+
   await runApprovedResumeTool({
     conversationId,
     userId,
@@ -504,10 +509,18 @@ function findLatestPendingApprovalTurn(turns: ChatTurnData[]): { turn: ChatTurnD
 
 function normalizeApprovalDecision(text: string): ApprovalDecision | null {
   const normalized = text.trim().toLowerCase()
-  if (/^(aprovar|aprovado|aprovada|autorizar|autorizo|sim|ok|pode|confirmo)\b/.test(normalized)) return 'approved'
+  if (/^(aprovar|aprovado|aprovada|autorizar|autorizo|permitir|permito|sempre|sim|ok|pode|confirmo)\b/.test(normalized)) return 'approved'
   if (/^(rejeitar|rejeito|negar|nego|cancelar|cancela|não|nao)\b/.test(normalized)) return 'rejected'
   if (/^(ajustar|ajuste|alterar|corrigir|modificar|revisar)\b/.test(normalized)) return 'adjust'
   return null
+}
+
+/**
+ * True when the user's approval reply means "permitir sempre" — the connector
+ * should persist an allowlist grant for this folder so it stops re-prompting.
+ */
+function wantsRememberScope(text: string): boolean {
+  return /\bsempre\b/.test(text.trim().toLowerCase())
 }
 
 function createApprovalResumeBudget(): SkillContext['budget'] {
