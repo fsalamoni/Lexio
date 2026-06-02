@@ -13,6 +13,7 @@
  */
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import os from 'node:os'
 import { exec } from 'node:child_process'
 import {
   resolveInsideRoots,
@@ -28,6 +29,37 @@ import { gitStatus, gitDiff, gitCommit, gitPull, gitPush } from './git.mjs'
 const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB read/write ceiling
 const SHELL_MAX_TIMEOUT_SEC = 30
 const SHELL_OUTPUT_CAP = 12_000
+
+/** The sidecar's own data dir (~/.lexio) — used for backups + undo journal. */
+function lexioDir() {
+  return path.join(os.homedir(), '.lexio')
+}
+function journalPath() {
+  return path.join(lexioDir(), 'organize-journal.json')
+}
+async function pathExists(p) {
+  try { await fs.access(p); return true } catch { return false }
+}
+async function ensureDir(dir) {
+  await fs.mkdir(dir, { recursive: true })
+}
+/** Move a file, falling back to copy+unlink across filesystems and replacing an
+ * existing destination (Windows rename refuses that). */
+async function moveFile(src, dest) {
+  try {
+    await fs.rename(src, dest)
+  } catch (err) {
+    if (err.code === 'EXDEV') {
+      await fs.copyFile(src, dest)
+      await fs.unlink(src)
+    } else if (err.code === 'EEXIST' || err.code === 'EPERM' || err.code === 'ENOTEMPTY') {
+      await fs.rm(dest, { force: true })
+      await fs.rename(src, dest)
+    } else {
+      throw err
+    }
+  }
+}
 
 /**
  * @param {object} config
@@ -83,6 +115,8 @@ export function createHandler(config) {
       if (op === 'write') return writeFile(payload)
       if (op === 'delete') return deleteEntry(payload)
       if (op === 'rename' || op === 'move') return renameEntry(payload)
+      if (op === 'organize') return organizeBatch(payload)
+      if (op === 'undo') return undoBatch(payload)
     }
 
     if (type === 'shell' && op === 'exec') {
@@ -241,6 +275,92 @@ export function createHandler(config) {
     await fs.mkdir(path.dirname(to), { recursive: true })
     await fs.rename(from, to)
     return { from, to, moved: true }
+  }
+
+  /**
+   * Batch-move files to organize them (within or across authorized folders),
+   * with a backup of any overwritten destination and a journal that enables a
+   * full undo. Every from/to is sandbox-validated; secrets and roots are never
+   * touched. The journal of the last run is persisted to ~/.lexio so `undo`
+   * works even after a reload. `conflict`: 'backup' (default) | 'skip' | 'overwrite'.
+   */
+  async function organizeBatch(payload = {}) {
+    assertPermission(permissions, 'rename')
+    const moves = Array.isArray(payload.moves) ? payload.moves : []
+    if (moves.length === 0) throw new SandboxError('Nenhum movimento informado para organizar.', 'EMPTY_BATCH')
+    const conflict = ['backup', 'skip', 'overwrite'].includes(payload.conflict) ? payload.conflict : 'backup'
+    const runId = new Date().toISOString().replace(/[:.]/g, '-')
+    const backupDir = path.join(lexioDir(), 'backups', runId)
+    const journal = []
+    const errors = []
+    let moved = 0
+    let skipped = 0
+
+    for (let i = 0; i < moves.length; i += 1) {
+      const move = moves[i] || {}
+      try {
+        const from = resolveInsideRoots(roots, String(move.from ?? '')).path
+        const to = resolveInsideRoots(roots, String(move.to ?? '')).path
+        if (roots.some(r => path.resolve(from) === r || path.resolve(to) === r)) {
+          throw new SandboxError('Não é permitido mover a raiz de uma pasta.', 'ROOT_PROTECTED')
+        }
+        if (isBlockedByGlob(path.basename(from), blockedGlobs) || isBlockedByGlob(path.basename(to), blockedGlobs)) {
+          throw new SandboxError('Origem ou destino está na lista de bloqueio.', 'BLOCKED')
+        }
+        let backup
+        if (await pathExists(to)) {
+          if (conflict === 'skip') { skipped += 1; journal.push({ from, to, skipped: true }); continue }
+          if (conflict === 'backup') {
+            backup = path.join(backupDir, `${i}-${path.basename(to)}`)
+            await ensureDir(path.dirname(backup))
+            await moveFile(to, backup)
+          }
+        }
+        await ensureDir(path.dirname(to))
+        await moveFile(from, to)
+        journal.push({ from, to, ...(backup ? { backup } : {}) })
+        moved += 1
+      } catch (err) {
+        errors.push({ index: i, error: err.message, code: err instanceof SandboxError ? err.code : 'ERROR' })
+      }
+    }
+
+    try {
+      await ensureDir(lexioDir())
+      await fs.writeFile(journalPath(), JSON.stringify({ runId, journal }, null, 2), 'utf8')
+    } catch { /* journal persistence is best-effort */ }
+
+    return { runId, moved, skipped, errors, journal }
+  }
+
+  /**
+   * Reverse an organize run: move each file back and restore any backed-up
+   * destination. With no `journal` in the payload, the last persisted run is
+   * undone. Sandbox-validated; the journal is cleared afterwards.
+   */
+  async function undoBatch(payload = {}) {
+    assertPermission(permissions, 'rename')
+    let journal = Array.isArray(payload.journal) ? payload.journal : null
+    if (!journal) {
+      try { journal = JSON.parse(await fs.readFile(journalPath(), 'utf8')).journal } catch { journal = [] }
+    }
+    const errors = []
+    let restored = 0
+    for (let i = journal.length - 1; i >= 0; i -= 1) {
+      const entry = journal[i]
+      if (!entry || entry.skipped) continue
+      try {
+        const from = resolveInsideRoots(roots, String(entry.from ?? '')).path
+        const to = resolveInsideRoots(roots, String(entry.to ?? '')).path
+        if (await pathExists(to)) { await ensureDir(path.dirname(from)); await moveFile(to, from) }
+        if (entry.backup && await pathExists(entry.backup)) { await ensureDir(path.dirname(to)); await moveFile(entry.backup, to) }
+        restored += 1
+      } catch (err) {
+        errors.push({ error: err.message, code: err instanceof SandboxError ? err.code : 'ERROR' })
+      }
+    }
+    try { await fs.writeFile(journalPath(), JSON.stringify({ journal: [] }), 'utf8') } catch { /* best-effort */ }
+    return { restored, errors }
   }
 
   async function runGitOp(op, payload = {}) {

@@ -180,3 +180,43 @@ describe('git skills', () => {
     expect(result.awaiting_user?.resume_args?.message).toBe('wip')
   })
 })
+
+describe('organize/undo (batch) skills', () => {
+  it('exposes organize_files/undo_organize only when the gate is on', () => {
+    clearRuntimeFeatureFlags()
+    const off = buildSidecarSkills().map(s => s.name)
+    expect(off).not.toContain('organize_files')
+    expect(off).not.toContain('undo_organize')
+
+    setRuntimeFeatureFlags({ FF_CHAT_PC_APPROVALS: true })
+    const on = buildSidecarSkills().map(s => s.name)
+    expect(on).toContain('organize_files')
+    expect(on).toContain('undo_organize')
+  })
+
+  it('organize_files pauses with a readable plan for a single batch approval', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_PC_APPROVALS: true })
+    const ctx = makeCtx({ createApprovalRequest: vi.fn().mockResolvedValue('o1') })
+    const result = await skillByName('organize_files').run({
+      moves: [{ from: 'a/1.txt', to: 'b/1.txt' }, { from: 'a/2.txt', to: 'b/2.txt' }],
+      plan_title: 'Arrumar',
+    }, ctx)
+    expect(result.awaiting_user?.resume_tool).toBe('organize_files')
+    expect((result.awaiting_user?.resume_args?.moves as unknown[])?.length).toBe(2)
+    expect(result.awaiting_user?.question).toContain('Plano de organização')
+  })
+
+  it('organize_files rejects an empty plan', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_PC_APPROVALS: true })
+    const result = await skillByName('organize_files').run({ moves: [] }, makeCtx())
+    expect(result.awaiting_user).toBeFalsy()
+    expect(result.tool_message).toMatch(/ao menos um movimento/i)
+  })
+
+  it('undo_organize pauses for approval when the gate is on', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_PC_APPROVALS: true })
+    const ctx = makeCtx({ createApprovalRequest: vi.fn().mockResolvedValue('u1') })
+    const result = await skillByName('undo_organize').run({}, ctx)
+    expect(result.awaiting_user?.resume_tool).toBe('undo_organize')
+  })
+})

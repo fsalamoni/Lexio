@@ -51,6 +51,8 @@ No PC, o sidecar guarda a allowlist em `~/.lexio/desktop.json`:
 → { type: "grant", op: "list" }            ← { roots }
 → { type: "grant", op: "add",    payload: { path, persist? } }   // permitir (sessão/sempre)
 → { type: "grant", op: "remove", payload: { path, persist? } }   // revogar
+→ { type: "fs",    op: "organize", payload: { moves:[{from,to}], conflict? } }  // mover em lote + backup
+→ { type: "fs",    op: "undo",     payload: { journal? } }        // desfazer (a última, se vazio)
 ```
 
 `add` recusa pastas proibidas (`FORBIDDEN_ROOT`); `persist:true` grava no
@@ -65,7 +67,7 @@ config (sobrevive a reinício); sem `persist`, vale só enquanto o processo roda
 | **2** | **Frontend (dados):** tipos Firestore + `sidecar-devices.ts` (lista de PCs + ativo) + migração; store da allowlist (`sidecar-allowlist.ts`) | `FF_CHAT_PC_DEVICES` | ✅ feito |
 | 3 | **UI Configurações:** gerir **PCs** (add/nomear/remover/ativar) e **pastas** por PC (ver/adicionar/revogar via `grant`) | `FF_CHAT_PC_DEVICES` | ⏳ |
 | **4** | **Aprovação 3 botões + allowlist:** *permitir desta vez / permitir sempre / negar*; checar allowlist antes de pedir; autorizar **nova pasta** (`grant_folder`) pelo mesmo fluxo | `FF_CHAT_PC_APPROVALS` + `FF_CHAT_PC_DEVICES` | ✅ feito |
-| 5 | **Organizar + segurança:** skill "organizar" com **pré-visualização do plano** e aprovação em lote; backup/desfazer de sobrescritas (mover entre pastas já funciona via `rename_file`) | `FF_CHAT_PC_APPROVALS` | ⏳ parcial |
+| **5** | **Organizar + segurança:** skills `organize_files` (mover em lote com **prévia do plano** + aprovação única + backup) e `undo_organize` (desfazer a última); sidecar `fs/organize` + `fs/undo` com journal persistido | `FF_CHAT_PC_APPROVALS` | ✅ feito |
 | **6** | **Conveniência:** iniciar com o Windows (scripts opt-in `Ligar/Desligar-no-Inicio-do-Windows.cmd`) | — | ✅ feito |
 
 ## Uso (já disponível na Onda 1)

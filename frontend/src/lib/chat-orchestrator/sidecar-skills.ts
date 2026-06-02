@@ -1126,20 +1126,162 @@ const grantFolderSkill: Skill<GrantFolderArgs> = {
   },
 }
 
+// ── Skill: Organizar arquivos em lote (plano + desfazer) ──────────────────────
+
+interface OrganizeArgs {
+  moves?: Array<{ from?: string; to?: string }>
+  plan_title?: string
+  conflict?: 'backup' | 'skip' | 'overwrite'
+  approved?: boolean
+  approval_id?: string
+  remember_scope?: boolean
+}
+
+const organizeFilesSkill: Skill<OrganizeArgs> = {
+  name: 'organize_files',
+  description:
+    'Organiza arquivos movendo-os EM LOTE (dentro de uma pasta ou entre pastas autorizadas), ' +
+    'apresentando um PLANO para o usuário aprovar de uma só vez. Faz backup do que for sobrescrito ' +
+    'e pode ser desfeito com undo_organize. Use para "organize minha pasta", arrumar por tipo/ano, etc.',
+  argsHint: {
+    moves: 'Lista de movimentos [{ "from": "...", "to": "..." }] dentro das pastas autorizadas',
+    plan_title: 'Título curto do plano (ex.: "Organizar Downloads por tipo")',
+    conflict: 'Se o destino existir: backup (padrão) | skip | overwrite',
+  },
+  async run(args, ctx): Promise<SkillResult> {
+    const moves = Array.isArray(args.moves)
+      ? args.moves.map(m => ({ from: String(m?.from ?? '').trim(), to: String(m?.to ?? '').trim() })).filter(m => m.from && m.to)
+      : []
+    if (moves.length === 0) return { tool_message: 'Erro: informe ao menos um movimento { from, to } para organizar.' }
+    const conflict = args.conflict === 'skip' || args.conflict === 'overwrite' ? args.conflict : 'backup'
+    const title = String(args.plan_title ?? '').trim() || `Organizar ${moves.length} arquivo(s)`
+
+    // Pre-approved only when EVERY endpoint already sits in an allowed folder.
+    let allCovered = true
+    for (const m of moves) {
+      if (!(await isPreApproved(ctx, 'rename', m.from)) || !(await isPreApproved(ctx, 'rename', m.to))) { allCovered = false; break }
+    }
+    if (approvalGateActive() && args.approved !== true && !allCovered) {
+      const preview = moves.slice(0, 12).map((m, i) => `${i + 1}. ${m.from} → ${m.to}`).join('\n')
+      const more = moves.length > 12 ? `\n… e mais ${moves.length - 12} movimento(s).` : ''
+      return requestSidecarApproval(ctx, {
+        op: 'move',
+        title,
+        summary:
+          `Plano de organização — ${moves.length} movimento(s), conflitos: ${conflict}:\n\n${preview}${more}\n\n` +
+          `Nada é apagado: um destino existente é copiado para backup e a ação pode ser desfeita.`,
+        permissions: ['rename'],
+        resourcePath: moves[0].from,
+        resumeTool: 'organize_files',
+        resumeArgs: { moves, conflict, plan_title: title },
+      })
+    }
+
+    // "permitir sempre" → remember every folder touched by the plan.
+    if (args.remember_scope === true && devicesFeatureActive()) {
+      try {
+        const deviceId = await activeDeviceIdFor(ctx)
+        const dirs = Array.from(new Set(moves.flatMap(m => [dirOf(m.from), dirOf(m.to)]).filter(Boolean)))
+        let rules = await loadSidecarAllowlist(ctx.uid)
+        for (const dir of dirs) rules = addRule(rules, { device_id: deviceId, root: dir, ops: ['rename'] })
+        await saveSidecarAllowlist(rules, ctx.uid)
+      } catch {
+        // best-effort
+      }
+    }
+
+    const wsUrl = resolveSidecarWsUrl(ctx)
+    const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
+    const useSidecar = sidecarOk && !ctx.mock && !!wsUrl
+    if (!useSidecar) {
+      ctx.emit(fsTrailEvent('organize', `${moves.length} movimento(s)`, '(modo demonstração)'))
+      return {
+        tool_message: `⚠️ Modo demonstração — nada foi movido.\n\nPlano (${moves.length}):\n${moves.map((m, i) => `${i + 1}. ${m.from} → ${m.to}`).join('\n')}\n\nInstale @lexio/desktop para organizar de verdade.`,
+      }
+    }
+
+    const response = await callSidecar({ id: uid(), type: 'fs', op: 'organize', payload: { moves, conflict } }, ctx.signal, wsUrl!)
+    if (!response || !response.ok) {
+      ctx.emit(fsTrailEvent('organize', title, undefined, response?.error))
+      await auditSafe(ctx, { operation: 'organize', actor: 'sidecar', status: 'failed', approval_id: args.approval_id, message: response?.error ?? 'Sidecar indisponível' })
+      return { tool_message: `Falha ao organizar: ${response?.error ?? 'Sidecar indisponível'}` }
+    }
+    const r = (response.result ?? {}) as { moved?: number; skipped?: number; errors?: Array<{ index: number; error: string }> }
+    const errs = r.errors ?? []
+    ctx.emit(fsTrailEvent('organize', title, `${r.moved ?? 0} movido(s)`))
+    await auditSafe(ctx, {
+      operation: 'organize', actor: 'sidecar', status: 'executed', approval_id: args.approval_id,
+      message: `${r.moved ?? 0} movido(s), ${r.skipped ?? 0} pulado(s), ${errs.length} erro(s)`,
+    })
+    const errLines = errs.length ? `\n\n⚠️ ${errs.length} não realizada(s):\n${errs.slice(0, 8).map(e => `- #${e.index + 1}: ${e.error}`).join('\n')}` : ''
+    return {
+      tool_message:
+        `✅ Organização concluída: ${r.moved ?? 0} movido(s)` +
+        `${r.skipped ? `, ${r.skipped} pulado(s)` : ''}${errs.length ? `, ${errs.length} com erro` : ''}.` +
+        `${errLines}\n\nPara reverter tudo, peça "desfazer a organização".`,
+    }
+  },
+}
+
+// ── Skill: Desfazer organização ───────────────────────────────────────────────
+
+interface UndoOrganizeArgs {
+  approved?: boolean
+  approval_id?: string
+}
+
+const undoOrganizeSkill: Skill<UndoOrganizeArgs> = {
+  name: 'undo_organize',
+  description:
+    'Desfaz a última organização de arquivos (organize_files): devolve cada arquivo ao local ' +
+    'original e restaura os backups. Use quando o usuário pedir para reverter/desfazer a organização.',
+  argsHint: {},
+  async run(args, ctx): Promise<SkillResult> {
+    if (approvalGateActive() && args.approved !== true) {
+      return requestSidecarApproval(ctx, {
+        op: 'move',
+        title: 'Desfazer a última organização',
+        summary: 'Reverte a última organização: cada arquivo volta ao local original e os backups são restaurados.',
+        permissions: ['rename'],
+        resumeTool: 'undo_organize',
+        resumeArgs: {},
+      })
+    }
+    const wsUrl = resolveSidecarWsUrl(ctx)
+    const sidecarOk = await isSidecarAvailable(ctx.signal, wsUrl)
+    const useSidecar = sidecarOk && !ctx.mock && !!wsUrl
+    if (!useSidecar) {
+      ctx.emit(fsTrailEvent('undo', 'organização', '(modo demonstração)'))
+      return { tool_message: '⚠️ Modo demonstração — nada foi desfeito. Instale @lexio/desktop.' }
+    }
+    const response = await callSidecar({ id: uid(), type: 'fs', op: 'undo', payload: {} }, ctx.signal, wsUrl!)
+    if (!response || !response.ok) {
+      ctx.emit(fsTrailEvent('undo', 'organização', undefined, response?.error))
+      await auditSafe(ctx, { operation: 'undo', actor: 'sidecar', status: 'failed', approval_id: args.approval_id, message: response?.error ?? 'Sidecar indisponível' })
+      return { tool_message: `Falha ao desfazer: ${response?.error ?? 'Sidecar indisponível'}` }
+    }
+    const r = (response.result ?? {}) as { restored?: number }
+    ctx.emit(fsTrailEvent('undo', 'organização', `${r.restored ?? 0} restaurado(s)`))
+    await auditSafe(ctx, { operation: 'undo', actor: 'sidecar', status: 'executed', approval_id: args.approval_id, message: `${r.restored ?? 0} restaurado(s)` })
+    return { tool_message: `↩️ Organização desfeita: ${r.restored ?? 0} arquivo(s) restaurado(s).` }
+  },
+}
+
 // ── Export ────────────────────────────────────────────────────────────────────
 
 /**
  * PR4 sidecar skills — file system and shell access via local desktop agent.
  * Extend this array when adding new sidecar-backed capabilities.
  *
- * The destructive `delete_file`/`rename_file` skills are only exposed when the
- * approval gate (`FF_CHAT_PC_APPROVALS`) is on, so they can never run ungated.
- * `grant_folder` (authorize a new folder) appears only with the multi-PC flag.
+ * The destructive `delete_file`/`rename_file`/`organize_files`/`undo_organize`
+ * skills are only exposed when the approval gate (`FF_CHAT_PC_APPROVALS`) is on,
+ * so they can never run ungated. `grant_folder` (authorize a new folder) appears
+ * only with the multi-PC flag.
  */
 export function buildSidecarSkills(): Skill[] {
   const base: Skill[] = [readFileSkill, listDirSkill, writeFileSkill, shellSkill]
   if (approvalGateActive()) {
-    base.push(deleteFileSkill, renameFileSkill)
+    base.push(deleteFileSkill, renameFileSkill, organizeFilesSkill, undoOrganizeSkill)
   }
   if (devicesFeatureActive()) {
     base.push(grantFolderSkill)
