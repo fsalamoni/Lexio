@@ -45,6 +45,7 @@ import StudioV2ConfigCard from '../components/admin/StudioV2ConfigCard'
 import ChatOrchestratorV2ConfigCard from '../components/admin/ChatOrchestratorV2ConfigCard'
 import ChatOrchestratorV2ToolsConfigCard from '../components/admin/ChatOrchestratorV2ToolsConfigCard'
 import SidecarConnectionCard from '../components/admin/SidecarConnectionCard'
+import SidecarDevicesCard from '../components/admin/SidecarDevicesCard'
 import SidecarAuditAllCard from '../components/admin/SidecarAuditAllCard'
 import GithubConnectorCard from '../components/admin/GithubConnectorCard'
 import GoogleConnectorCard from '../components/admin/GoogleConnectorCard'
@@ -1116,6 +1117,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <SidecarConnectionCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Multi-PC + authorized folders — behind FF_CHAT_PC_DEVICES */}
+      {IS_FIREBASE && isFeatureEnabled('FF_CHAT_PC_DEVICES') && (
+        <AdminCollapsibleSection
+          id="section_sidecar_devices"
+          title="Meus PCs e pastas autorizadas"
+          icon={Brain}
+          iconColor="text-indigo-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <SidecarDevicesCard />
         </AdminCollapsibleSection>
       )}
 

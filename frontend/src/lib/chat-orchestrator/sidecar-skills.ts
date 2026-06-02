@@ -1151,6 +1151,36 @@ export function buildSidecarSkills(): Skill[] {
 }
 
 /**
+ * Send a `grant` op to the sidecar from the UI (authorize/revoke a folder, or
+ * list current roots). Used by the settings card to manage folders without the
+ * chat. Returns the updated roots on success. Best-effort; never throws.
+ */
+export async function sendSidecarGrant(opts: {
+  wsUrl: string
+  op: 'add' | 'remove' | 'list'
+  path?: string
+  persist?: boolean
+  timeoutMs?: number
+}): Promise<{ ok: boolean; roots?: string[]; error?: string }> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 3000)
+  try {
+    const payload: Record<string, unknown> = {}
+    if (opts.path) payload.path = opts.path
+    if (opts.persist !== undefined) payload.persist = opts.persist
+    const res = await callSidecar({ id: uid(), type: 'grant', op: opts.op, payload }, controller.signal, opts.wsUrl)
+    clearTimeout(timeout)
+    if (!res) return { ok: false, error: 'Agente local indisponível.' }
+    if (!res.ok) return { ok: false, error: res.error ?? 'Operação recusada pelo agente.' }
+    const result = (res.result ?? {}) as { roots?: string[] }
+    return { ok: true, roots: Array.isArray(result.roots) ? result.roots : undefined }
+  } catch {
+    clearTimeout(timeout)
+    return { ok: false, error: 'Falha ao conectar ao agente local.' }
+  }
+}
+
+/**
  * Verifica se o sidecar está disponível.
  * Útil para a UI mostrar indicador de status.
  */

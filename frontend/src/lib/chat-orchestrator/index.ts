@@ -10,7 +10,7 @@ export { callOrchestratorLLM } from './orchestrator-llm'
 export { OrchestratorDecisionParseError } from './tools-adapter'
 export { buildSuperSkills, PIPELINE_DOCUMENT_TYPES, PIPELINE_DOCUMENT_LABELS } from './super-skills'
 export type { PipelineDocumentType } from './super-skills'
-export { buildSidecarSkills, checkSidecarStatus } from './sidecar-skills'
+export { buildSidecarSkills, checkSidecarStatus, sendSidecarGrant } from './sidecar-skills'
 export { buildGithubSkills } from './github-skills'
 export { buildGoogleSkills } from './google-skills'
 export type {
