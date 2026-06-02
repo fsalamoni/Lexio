@@ -55,6 +55,16 @@ export const DEFAULT_V1_PROFILE: ChatOrchestratorProfile = {
  * subscribes to `onTrail` to render the orchestration in real time and
  * reads the returned `RunChatTurnOutput` to persist the turn's final state.
  */
+/**
+ * Deterministic PC (sidecar) action skills. When the turn's last real action was
+ * one of these, the result is already concrete (the sidecar validated/executed
+ * it), so under lean orchestration we can finalise without an extra critic hop.
+ */
+const PC_ACTION_SKILLS = new Set<string>([
+  'write_file', 'delete_file', 'rename_file', 'organize_files', 'undo_organize',
+  'run_shell', 'grant_folder', 'git_commit', 'git_pull', 'git_push',
+])
+
 export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnOutput> {
   if (input.signal.aborted) {
     throw new DOMException('Operação cancelada pelo usuário.', 'AbortError')
@@ -114,6 +124,9 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     const startedAt = Date.now()
     let partialIterations = 0
     let deliverableGuardRejections = 0
+    // Last real action skill executed (excludes finalisation/critique), used to
+    // skip the redundant critic hop after a deterministic PC action.
+    let lastActionSkill: string | null = null
 
     for (let i = 1; i <= preset.maxIterations; i++) {
       if (input.signal.aborted) {
@@ -217,6 +230,10 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
 
     history = appendToolMessage(history, result.tool_message, decision.tool)
 
+    if (decision.tool !== 'submit_final_answer' && decision.tool !== 'critique_draft') {
+      lastActionSkill = decision.tool
+    }
+
     if (result.awaiting_user) {
       // Pause the turn — the controller persists state and unblocks once
       // the user answers.
@@ -255,10 +272,15 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
         // Always attempt a critic pass before accepting the final answer.
         // The critic now runs iteratively — even after a skill declares
         // final_answer, we validate and can loop back for refinements.
+        // Exception (lean orchestration): when the turn's last real action was a
+        // deterministic PC op, the result is already concrete — skip the extra
+        // critic round-trip to reduce agent movement on PC tasks.
+        const skipCriticForPcAction = leanOrchestration && lastActionSkill !== null && PC_ACTION_SKILLS.has(lastActionSkill)
         if (
           preset.criticInterval > 0
           && preset.criticInterval <= preset.maxIterations
           && i < preset.maxIterations
+          && !skipCriticForPcAction
         ) {
           try {
             const enginePlus = isEnabled('FF_CHAT_ENGINE_PLUS')
@@ -872,6 +894,7 @@ async function forceFinalize(history: OrchestratorMessage[], ctx: SkillContext):
 
 function buildOrchestratorSystemPrompt(skills: Skill[], effort: string, expectedDeliverables: ChatExpectedDeliverable[], profile: ChatOrchestratorProfile): string {
   const manifest = renderSkillsManifest(skills)
+  const hasPcTools = skills.some(s => s.name === 'write_file' || s.name === 'organize_files' || s.name === 'run_shell')
   const callable = profile.listCallableAgents()
     .map(a => `- \`${a.key}\` (${a.label}): ${a.description}`)
     .join('\n')
@@ -916,6 +939,13 @@ function buildOrchestratorSystemPrompt(skills: Skill[], effort: string, expected
     '- Se o histórico estiver longo, chame `summarize_context` para liberar tokens.',
     '- Antes de finalizar, se estiver inseguro, chame `critique_draft` com o rascunho atual.',
     '- Nunca invente jurisprudência, doutrina, números de processo ou fatos do caso.',
+    ...(hasPcTools
+      ? [
+          '- **Ações no PC (pasta local):** você já tem as tools de PC (`list_directory`, `read_file`, `write_file`, `organize_files`, `undo_organize`, `run_shell`, `grant_folder`). Para uma ação direta (ler, escrever, mover, organizar, rodar comando, autorizar pasta), CHAME A TOOL diretamente — não delegue ao `chat_fs_actor`, que só devolve um plano e custa uma ida e volta a mais. Reserve `chat_fs_actor` para planejar uma sequência longa, ambígua ou arriscada antes de executar.',
+          '- **Organizar/arrumar arquivos:** prefira `organize_files` — um único plano, uma aprovação, com backup e desfazer via `undo_organize` — em vez de encadear vários `write_file`/`run_shell`/`rename_file`.',
+          '- **Sem reescrita redundante:** quando uma tool de PC já executou e o retorno dela já resume o que foi feito, finalize com `submit_final_answer` direto; não chame `chat_writer`/`chat_summarizer` apenas para reformatar o resultado da ação.',
+        ]
+      : []),
     ...(isEnabled('FF_CHAT_LEAN_ORCHESTRATION')
       ? [
           '- **Eficiência:** se uma skill já entregou o resultado e um texto suficiente, finalize com `submit_final_answer` diretamente; não chame `chat_writer` apenas para reformular.',

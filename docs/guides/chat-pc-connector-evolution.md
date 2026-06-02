@@ -65,7 +65,7 @@ config (sobrevive a reinício); sem `persist`, vale só enquanto o processo roda
 |------|--------|------|--------|
 | **1** | **Sidecar:** várias pastas (`roots`), `grant add/remove` (sessão/persistente), guarda de pastas de sistema, mover entre pastas, testes | — (base) | ✅ feito |
 | **2** | **Frontend (dados):** tipos Firestore + `sidecar-devices.ts` (lista de PCs + ativo) + migração; store da allowlist (`sidecar-allowlist.ts`) | `FF_CHAT_PC_DEVICES` | ✅ feito |
-| 3 | **UI Configurações:** gerir **PCs** (add/nomear/remover/ativar) e **pastas** por PC (ver/adicionar/revogar via `grant`) | `FF_CHAT_PC_DEVICES` | ⏳ |
+| **3** | **UI Configurações:** card "Meus PCs e pastas autorizadas" — gerir **PCs** (add/nomear/remover/ativar) e **pastas** por PC (ver/adicionar/revogar via `grant`) | `FF_CHAT_PC_DEVICES` | ✅ feito |
 | **4** | **Aprovação 3 botões + allowlist:** *permitir desta vez / permitir sempre / negar*; checar allowlist antes de pedir; autorizar **nova pasta** (`grant_folder`) pelo mesmo fluxo | `FF_CHAT_PC_APPROVALS` + `FF_CHAT_PC_DEVICES` | ✅ feito |
 | **5** | **Organizar + segurança:** skills `organize_files` (mover em lote com **prévia do plano** + aprovação única + backup) e `undo_organize` (desfazer a última); sidecar `fs/organize` + `fs/undo` com journal persistido | `FF_CHAT_PC_APPROVALS` | ✅ feito |
 | **6** | **Conveniência:** iniciar com o Windows (scripts opt-in `Ligar/Desligar-no-Inicio-do-Windows.cmd`) | — | ✅ feito |
@@ -79,3 +79,22 @@ node bin/lexio-desktop.mjs --root "C:\Users\voce\Lexio" --root "C:\Casos" --perm
 
 Em runtime, o chat (ondas 3–4) poderá autorizar novas pastas via `grant`, com
 aprovação do usuário — sem reiniciar o sidecar.
+
+## Otimização do orquestrador para tarefas de PC
+
+Para reduzir o **vai-e-vem entre agentes** quando o turno envolve o PC (mantendo
+raciocínio e planejamento):
+
+- **Execução direta das tools de PC:** o orquestrador é instruído (sempre que as
+  tools de PC estão disponíveis) a chamar `read_file`/`write_file`/`organize_files`/
+  `run_shell`/`grant_folder` **diretamente**, em vez de delegar ao especialista
+  `chat_fs_actor` — que só devolvia um plano e custava uma ida e volta extra.
+- **`chat_fs_actor` repaginado:** passa a ser acionado **só** para planejar uma
+  sequência longa, ambígua ou arriscada; ações simples o orquestrador executa só.
+- **Organizar em um passo:** orienta-se a usar `organize_files` (um plano + uma
+  aprovação) em vez de encadear vários `write_file`/`run_shell`/`rename_file`.
+- **Sem reescrita redundante:** quando a tool de PC já entregou e resumiu o
+  resultado, finaliza com `submit_final_answer` direto (sem `chat_writer`).
+- **Sem crítico redundante (lean):** sob `FF_CHAT_LEAN_ORCHESTRATION`, quando a
+  última ação do turno foi uma operação de PC determinística, pula-se a passada
+  do crítico — uma chamada LLM a menos, sem perder qualidade.

@@ -184,6 +184,51 @@ describe('runChatTurn', () => {
     }
   })
 
+  it('skips the critic hop after a deterministic PC action under lean orchestration', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_LEAN_ORCHESTRATION: true })
+    try {
+      const events: ChatTrailEvent[] = []
+      let call = 0
+      const llmCall = vi.fn(async () => {
+        call += 1
+        return call === 1
+          ? { raw: JSON.stringify({ tool: 'write_file', args: { path: 'notas/a.txt', content: 'oi' } }), usage: null }
+          : { raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# salvo' } }), usage: null }
+      }) satisfies OrchestratorLLMCall
+
+      const result = await runChatTurn(makeInput({ llmCall, onTrail: e => events.push(e) }))
+
+      expect(result.status).toBe('done')
+      expect(result.assistant_markdown).toContain('# salvo')
+      // The last real action was a deterministic PC op → critic hop is skipped.
+      expect(events.some(e => e.type === 'agent_call' && e.agent_key === 'chat_critic')).toBe(false)
+      expect(llmCall).toHaveBeenCalledTimes(2)
+    } finally {
+      clearRuntimeFeatureFlags()
+    }
+  })
+
+  it('still runs the critic under lean when the last action was NOT a PC op', async () => {
+    setRuntimeFeatureFlags({ FF_CHAT_LEAN_ORCHESTRATION: true })
+    try {
+      const events: ChatTrailEvent[] = []
+      let call = 0
+      const llmCall = vi.fn(async () => {
+        call += 1
+        return call === 1
+          ? { raw: JSON.stringify({ tool: 'call_agent', args: { agent_key: 'chat_planner', task: 'planejar' } }), usage: null }
+          : { raw: JSON.stringify({ tool: 'submit_final_answer', args: { markdown: '# pronto' } }), usage: null }
+      }) satisfies OrchestratorLLMCall
+
+      const result = await runChatTurn(makeInput({ llmCall, onTrail: e => events.push(e) }))
+
+      expect(result.status).toBe('done')
+      expect(events.some(e => e.type === 'agent_call' && e.agent_key === 'chat_critic')).toBe(true)
+    } finally {
+      clearRuntimeFeatureFlags()
+    }
+  })
+
   it('respects maxIterations when the orchestrator never finalises', async () => {
     const events: ChatTrailEvent[] = []
     const llmCall = vi.fn(async () => ({
