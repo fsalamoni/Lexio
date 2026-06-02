@@ -217,6 +217,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     devToggleable: true,
   },
   {
+    key: 'FF_CHAT_PC_DEVICES',
+    label: 'Chat: Vários PCs e pastas',
+    description: 'Permite parear vários PCs (ligar um por vez) e autorizar várias pastas por PC, com "permitir desta vez / permitir sempre / negar" e lista de autorizações revogável. Sem a flag, vale o pareamento único legado.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_PC_DEVICES',
+    devToggleable: true,
+  },
+  {
     key: 'FF_CHAT_GITHUB',
     label: 'Chat: Conector GitHub',
     description: 'Habilita o conector GitHub (token PAT salvo nas configurações) para ler repositórios, criar issues/PRs e operar git autenticado via sidecar.',

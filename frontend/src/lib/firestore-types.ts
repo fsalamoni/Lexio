@@ -174,7 +174,22 @@ export interface UserSettingsData {
     host: string
     port: number
     enabled: boolean
+    approval_policy?: ChatSidecarApprovalPolicy
   }
+  /**
+   * Named PCs (sidecar devices) the user paired. One is active at a time
+   * (`active_sidecar_device_id`). Behind `FF_CHAT_PC_DEVICES`; when the flag is
+   * off the legacy single `sidecar_connection` is used. Seeded from
+   * `sidecar_connection` on first load so existing pairings keep working.
+   */
+  sidecar_devices?: SidecarDeviceConfig[]
+  active_sidecar_device_id?: string
+  /**
+   * Persisted "permitir sempre" grants: which folder (root) on which device the
+   * user authorized for which operations, so the chat skips re-prompting for the
+   * same scope. Mirrors the allowlist the sidecar enforces on the PC side.
+   */
+  sidecar_allowlist?: SidecarAllowlistRule[]
   /** Default effort level used by the Chat orchestrator when the user opens a new conversation. */
   chat_effort_default?: ChatEffortLevel
   /** Timestamp of the last successful pairing handshake with the @lexio/desktop sidecar (no token persisted). */
@@ -750,6 +765,35 @@ export type ChatSidecarProvider = 'local_folder' | 'github' | 'dropbox' | 'googl
 export type ChatSidecarPermission = 'read' | 'write' | 'delete' | 'rename' | 'execute' | 'network'
 export type ChatSidecarApprovalPolicy = 'always' | 'per_command' | 'batch' | 'trusted_readonly'
 export type ChatSidecarDeviceStatus = 'online' | 'offline' | 'revoked'
+
+/**
+ * A named PC (sidecar device) persisted in user settings. All devices bind to
+ * 127.0.0.1; only the active one is used at a time. The token is the pairing
+ * secret from the @lexio/desktop banner. Used by the multi-PC connector
+ * (`FF_CHAT_PC_DEVICES`).
+ */
+export interface SidecarDeviceConfig {
+  id: string
+  label: string
+  token: string
+  host: string
+  port: number
+  created_at: string
+  last_connected_at?: string
+}
+
+/**
+ * A persisted "permitir sempre" grant: authorizes a folder (root) on a device
+ * for a set of operations so the chat does not re-prompt for the same scope.
+ * `ops: 'all'` covers every mutating operation.
+ */
+export interface SidecarAllowlistRule {
+  id: string
+  device_id: string
+  root: string
+  ops: ChatSidecarPermission[] | 'all'
+  created_at: string
+}
 
 export interface ChatSidecarDeviceData {
   id?: string

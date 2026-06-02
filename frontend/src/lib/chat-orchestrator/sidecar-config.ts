@@ -10,8 +10,10 @@
  * process is running).
  */
 import { IS_FIREBASE } from '../firebase'
+import { isEnabled } from '../feature-flags'
 import { ensureUserSettingsMigrated, getCurrentUserId, saveUserSettings } from '../firestore-service'
 import type { ChatSidecarApprovalPolicy, UserSettingsData } from '../firestore-types'
+import { deviceToConnectionConfig, getActiveDevice, normalizeDevicesState } from './sidecar-devices'
 
 export const DEFAULT_SIDECAR_PORT = 9420
 export const DEFAULT_SIDECAR_HOST = '127.0.0.1'
@@ -90,7 +92,18 @@ export async function loadSidecarConnectionConfig(uid?: string): Promise<Sidecar
   if (cached && cached.uid === resolvedUid) return cached.config
   try {
     const settings = await ensureUserSettingsMigrated(resolvedUid)
-    const config = normalize(settings.sidecar_connection)
+    let config = normalize(settings.sidecar_connection)
+    // Multi-PC: when enabled, the active device supplies the token/host/port,
+    // while the global enabled/approval_policy stay on `sidecar_connection`.
+    if (isEnabled('FF_CHAT_PC_DEVICES')) {
+      const state = normalizeDevicesState(
+        settings.sidecar_devices,
+        settings.active_sidecar_device_id,
+        settings.sidecar_connection,
+      )
+      const active = getActiveDevice(state)
+      if (active) config = deviceToConnectionConfig(active, config)
+    }
     cached = { uid: resolvedUid, config }
     return config
   } catch {
