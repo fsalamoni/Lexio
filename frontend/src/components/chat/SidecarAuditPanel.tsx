@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, RefreshCw, ShieldCheck } from 'lucide-react'
 import clsx from 'clsx'
 import { listChatSidecarAuditEntries } from '../../lib/firestore-service'
 import { IS_FIREBASE } from '../../lib/firebase'
+import { sidecarOperationLabel } from '../../lib/constants'
 import { useAuth } from '../../contexts/AuthContext'
 import type { ChatSidecarAuditEntryData } from '../../lib/firestore-types'
 
@@ -83,7 +84,7 @@ export default function SidecarAuditPanel({ conversationId }: SidecarAuditPanelP
             {entries.map(entry => (
               <li key={entry.id ?? `${entry.operation}-${entry.created_at}`} className="flex items-center gap-2 text-[11px]">
                 <span className={clsx('inline-block h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[entry.status] ?? 'bg-slate-300')} />
-                <span className="font-mono font-semibold text-[var(--v2-ink-strong)]">{entry.operation}</span>
+                <span className="font-semibold text-[var(--v2-ink-strong)]" title={entry.operation}>{sidecarOperationLabel(entry.operation)}</span>
                 <span className="text-[var(--v2-ink-faint)]">{STATUS_LABEL[entry.status] ?? entry.status}</span>
                 {entry.resource_path && (
                   <span className="truncate text-[var(--v2-ink-faint)]" title={entry.resource_path}>· {entry.resource_path}</span>

@@ -1,6 +1,30 @@
 // ── Shared label constants for document types and legal areas ────────────────
 // Single source of truth — import from here instead of defining locally.
 
+/** pt-BR labels for sidecar (PC) audit operations, used by the audit panels in
+ * Configurações and in the chat. Unknown ops fall back to the raw key. */
+export const SIDECAR_OPERATION_LABELS: Record<string, string> = {
+  read: 'ler',
+  list: 'listar',
+  write: 'escrever',
+  delete: 'apagar',
+  rename: 'renomear/mover',
+  move: 'mover',
+  organize: 'organizar (lote)',
+  undo: 'desfazer organização',
+  grant: 'autorizar pasta',
+  shell: 'comando',
+  git_status: 'git status',
+  git_diff: 'git diff',
+  git_commit: 'git commit',
+  git_pull: 'git pull',
+  git_push: 'git push',
+}
+
+export function sidecarOperationLabel(op: string): string {
+  return SIDECAR_OPERATION_LABELS[op] ?? op
+}
+
 /** Full display labels for all 10 document types. */
 export const DOCTYPE_LABELS: Record<string, string> = {
   parecer: 'Parecer',

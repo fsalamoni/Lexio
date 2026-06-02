@@ -9,6 +9,7 @@ import { Loader2, RefreshCw, ShieldCheck } from 'lucide-react'
 import clsx from 'clsx'
 import { listChatConversations, listChatSidecarAuditEntries } from '../../lib/firestore-service'
 import { IS_FIREBASE } from '../../lib/firebase'
+import { sidecarOperationLabel } from '../../lib/constants'
 import { useAuth } from '../../contexts/AuthContext'
 import type { ChatSidecarAuditEntryData } from '../../lib/firestore-types'
 
@@ -60,7 +61,7 @@ export default function SidecarAuditAllCard() {
           <ShieldCheck className="h-5 w-5" />
         </div>
         <p className="flex-1 text-sm text-[var(--v2-ink-soft)]">
-          Todas as ações no PC (escrever, apagar, renomear, shell, git) propostas/executadas nas suas conversas.
+          Todas as ações no PC (escrever, apagar, renomear, organizar, autorizar pasta, desfazer, shell, git) propostas/executadas nas suas conversas.
         </p>
         <button
           type="button"
@@ -95,7 +96,7 @@ export default function SidecarAuditAllCard() {
               {rows.map(row => (
                 <tr key={row.id ?? `${row.operation}-${row.created_at}`} className="border-t border-[var(--v2-border)]">
                   <td className="whitespace-nowrap px-3 py-1.5 text-[var(--v2-ink-faint)]">{formatDateTime(row.created_at)}</td>
-                  <td className="px-3 py-1.5 font-mono font-semibold text-[var(--v2-ink-strong)]">{row.operation}</td>
+                  <td className="px-3 py-1.5 font-semibold text-[var(--v2-ink-strong)]" title={row.operation}>{sidecarOperationLabel(row.operation)}</td>
                   <td className="px-3 py-1.5">
                     <span className={clsx('inline-flex items-center gap-1', STATUS_TEXT[row.status] ?? 'text-slate-500')}>
                       <span className={clsx('inline-block h-1.5 w-1.5 rounded-full', STATUS_DOT[row.status] ?? 'bg-slate-300')} />
