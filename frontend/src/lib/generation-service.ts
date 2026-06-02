@@ -100,10 +100,12 @@ const MAX_EMENTA_SOURCE_CHARS = 8000
 const DOCUMENT_AGENT_MODELS_CACHE_KEY = 'lexio:document-agent-models:v1'
 /** Keep cache short to reduce stale settings risk after admin changes. */
 const DOCUMENT_AGENT_MODELS_CACHE_TTL_MS = 5 * 60 * 1000
-/** Standard output budget for the Redator agent. */
-const REDATOR_DEFAULT_MAX_TOKENS = 12000
+/** Standard output budget for the Redator agent. Sized for long, well-founded
+ * documents (transcribed law articles, full súmula text, doctrine). Models with
+ * smaller output limits are auto-reduced by the LLM client. */
+const REDATOR_DEFAULT_MAX_TOKENS = 16000
 /** Optimized output budget for faster Redator runs (feature-flagged). */
-const REDATOR_FAST_MAX_TOKENS = 10000
+const REDATOR_FAST_MAX_TOKENS = 12000
 /** Minimum quality score required to keep the fast Redator output. */
 const REDATOR_ROLLBACK_MIN_QUALITY_DEFAULT = 82
 

@@ -56,13 +56,20 @@ export const DEFAULT_V1_PROFILE: ChatOrchestratorProfile = {
  * reads the returned `RunChatTurnOutput` to persist the turn's final state.
  */
 /**
- * Deterministic PC (sidecar) action skills. When the turn's last real action was
- * one of these, the result is already concrete (the sidecar validated/executed
- * it), so under lean orchestration we can finalise without an extra critic hop.
+ * Skills whose result is already vetted/deterministic, so under lean
+ * orchestration the extra critic hop is redundant movement and is skipped:
+ *  - PC (sidecar) actions: concrete, validated by the sidecar.
+ *  - `generate_*` skills: each runs its own internal quality pipeline
+ *    (document v3 quality eval + rollback, studio critic, media renderers), so
+ *    re-critiquing the chat summary on top adds a round-trip without value.
  */
-const PC_ACTION_SKILLS = new Set<string>([
+const CRITIC_SKIP_SKILLS = new Set<string>([
+  // PC (sidecar) actions
   'write_file', 'delete_file', 'rename_file', 'organize_files', 'undo_organize',
   'run_shell', 'grant_folder', 'git_commit', 'git_pull', 'git_push',
+  // self-vetted generators
+  'generate_document', 'generate_presentation', 'generate_audio', 'generate_video',
+  'generate_image', 'generate_studio_artifact',
 ])
 
 export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnOutput> {
@@ -280,14 +287,14 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
         // The critic now runs iteratively — even after a skill declares
         // final_answer, we validate and can loop back for refinements.
         // Exception (lean orchestration): when the turn's last real action was a
-        // deterministic PC op, the result is already concrete — skip the extra
-        // critic round-trip to reduce agent movement on PC tasks.
-        const skipCriticForPcAction = leanOrchestration && lastActionSkill !== null && PC_ACTION_SKILLS.has(lastActionSkill)
+        // self-vetted/deterministic skill (PC op or a generate_* pipeline that
+        // already ran its own quality gate), skip the extra critic round-trip.
+        const skipCriticForVettedAction = leanOrchestration && lastActionSkill !== null && CRITIC_SKIP_SKILLS.has(lastActionSkill)
         if (
           preset.criticInterval > 0
           && preset.criticInterval <= preset.maxIterations
           && i < preset.maxIterations
-          && !skipCriticForPcAction
+          && !skipCriticForVettedAction
         ) {
           try {
             const enginePlus = isEnabled('FF_CHAT_ENGINE_PLUS')

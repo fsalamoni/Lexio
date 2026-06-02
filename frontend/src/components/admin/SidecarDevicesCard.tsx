@@ -59,10 +59,14 @@ export default function SidecarDevicesCard() {
     return () => { cancelled = true }
   }, [])
 
-  async function persistDevices(next: SidecarDevicesState) {
+  // `resetLive` clears the tested folder list — only needed when the ACTIVE
+  // device changes (its folders differ). A rename keeps the list on screen.
+  async function persistDevices(next: SidecarDevicesState, opts: { resetLive?: boolean } = {}) {
     setState(next)
-    setLiveRoots(null)
-    setConnected(null)
+    if (opts.resetLive ?? true) {
+      setLiveRoots(null)
+      setConnected(null)
+    }
     try {
       await saveSidecarDevices(next)
       invalidateSidecarDevicesCache()
@@ -172,9 +176,15 @@ export default function SidecarDevicesCard() {
                   <Star className="h-4 w-4" fill={device.id === state.activeId ? 'currentColor' : 'none'} />
                 </button>
                 <input
-                  value={device.label}
-                  onChange={e => setState(prev => ({ ...prev, devices: prev.devices.map(d => d.id === device.id ? { ...d, label: e.target.value } : d) }))}
-                  onBlur={e => persistDevices(renameDevice(state, device.id, e.target.value))}
+                  key={`${device.id}:${device.label}`}
+                  defaultValue={device.label}
+                  aria-label="Nome do PC"
+                  onBlur={e => {
+                    const v = e.target.value.trim()
+                    if (v && v !== device.label) persistDevices(renameDevice(state, device.id, v), { resetLive: false })
+                    else e.target.value = device.label // restore on empty/unchanged
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                   className="flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-medium text-slate-800 hover:border-slate-200 focus:border-indigo-300 focus:outline-none"
                 />
                 {device.id === state.activeId && <span className="text-xs font-medium text-indigo-600">ativo</span>}
