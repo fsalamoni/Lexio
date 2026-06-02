@@ -1009,8 +1009,9 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* Model Configuration — Firebase mode */}
-      {IS_FIREBASE && (
+      {/* Model Configuration (document pipeline) — hidden when the v4 single-agent
+          pipeline is active, so only the active functionality's cards remain. */}
+      {IS_FIREBASE && !isFeatureEnabled('FF_DOCUMENT_GENERATION_V4') && (
         <AdminCollapsibleSection
           id="section_model_config"
           title="Configuração de Modelos (Documentos)"
@@ -1022,8 +1023,8 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* Document V3 Pipeline Config — Firebase mode */}
-      {IS_FIREBASE && (
+      {/* Document V3 Pipeline Config — hidden when the v4 pipeline is active. */}
+      {IS_FIREBASE && !isFeatureEnabled('FF_DOCUMENT_GENERATION_V4') && (
         <AdminCollapsibleSection
           id="section_document_v3_pipeline_config"
           title="Pipeline de Documentos v3"
@@ -1352,8 +1353,8 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* Presentation Pipeline Config (Firebase-only) */}
-      {IS_FIREBASE && (
+      {/* Presentation Pipeline Config (v1) — hidden when the v2 generator is active. */}
+      {IS_FIREBASE && !isFeatureEnabled('FF_PRESENTATION_V2_ENABLED') && (
         <AdminCollapsibleSection
           id="section_presentation_pipeline_config"
           title="Pipeline de Apresentação"
@@ -1366,8 +1367,8 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* Presentation v2 Pipeline Config (Firebase-only) */}
-      {IS_FIREBASE && (
+      {/* Presentation v2 Pipeline Config — shown only when the v2 flag is active. */}
+      {IS_FIREBASE && isFeatureEnabled('FF_PRESENTATION_V2_ENABLED') && (
         <AdminCollapsibleSection
           id="section_presentation_v2_pipeline_config"
           title="Gerador de Apresentação v2"
@@ -1380,8 +1381,8 @@ export default function AdminPanel() {
         </AdminCollapsibleSection>
       )}
 
-      {/* Chat Orchestrator Config (Firebase-only) */}
-      {IS_FIREBASE && (
+      {/* Chat Orchestrator Config (v1) — hidden when the v2 lean group is active. */}
+      {IS_FIREBASE && !isFeatureEnabled('FF_CHAT_ORCHESTRATOR_V2') && (
         <AdminCollapsibleSection
           id="section_chat_orchestrator_config"
           title="Orquestrador (Chat)"

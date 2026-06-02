@@ -218,7 +218,7 @@ describe('CostTokensPage', () => {
     localStorage.clear()
   })
 
-  it('renders a dedicated presentation v2 section even when only v1 presentation costs exist', async () => {
+  it('does not render a separate presentation v2 section (merged into the base pipeline)', async () => {
     render(<CostTokensPage />)
 
     await waitFor(() => {
@@ -226,9 +226,11 @@ describe('CostTokensPage', () => {
     })
 
     expect(await screen.findByRole('heading', { name: /custos e tokens/i })).toBeTruthy()
+    // The base functionality stays; the v2 section is hidden when there is no
+    // standalone v2 row (versions roll up into the base in the cost aggregator).
     expect(screen.getByRole('heading', { name: 'Pipeline de Apresentação' })).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Pipeline de Apresentação v2' })).toBeTruthy()
-    expect(screen.getByText('Nenhum dado de custo para o pipeline de apresentação v2.')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Pipeline de Apresentação v2' })).toBeNull()
+    expect(screen.queryByText('Nenhum dado de custo para o pipeline de apresentação v2.')).toBeNull()
   })
 
   it('renders presentation pipeline v2 breakdown data when v2 usage exists', async () => {

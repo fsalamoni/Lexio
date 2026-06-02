@@ -126,6 +126,29 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   chat_multimodal_analysis: 'Chat: Análise multimodal',
 }
 
+/**
+ * Evolution versions roll up into the superseded base functionality, so the cost
+ * and token tables show ONE line per functionality (the new implementation just
+ * sums into the old one) instead of separate v2/v3/v4 rows.
+ */
+const FUNCTION_KEY_CANONICAL: Partial<Record<UsageFunctionKey, UsageFunctionKey>> = {
+  document_generation_v3: 'document_generation',
+  document_generation_v4: 'document_generation',
+  presentation_pipeline_v2: 'presentation_pipeline',
+  chat_orchestrator_v2: 'chat_orchestrator',
+}
+
+/** Map any function key to its canonical (merged) functionality key. */
+export function canonicalFunctionKey(key: UsageFunctionKey | string): UsageFunctionKey {
+  return (FUNCTION_KEY_CANONICAL[key as UsageFunctionKey] ?? key) as UsageFunctionKey
+}
+
+/** Label of the canonical (merged) functionality for any version key. */
+export function canonicalFunctionLabel(key: UsageFunctionKey | string): string {
+  const canon = canonicalFunctionKey(key)
+  return FUNCTION_LABELS[canon] ?? String(key)
+}
+
 const PHASE_LABELS: Record<string, string> = {
   triagem: 'Triagem',
   document_pipeline_orchestrator: 'Documento: Orquestrador do Pipeline',
@@ -696,7 +719,7 @@ export function buildCostBreakdown(
   // Group executions by function key for per-function sub-breakdowns
   const execsByFunction = new Map<string, UsageExecutionRecord[]>()
   for (const execution of executions) {
-    const key = execution.function_key
+    const key = canonicalFunctionKey(execution.function_key)
     const group = execsByFunction.get(key) ?? []
     group.push(execution)
     execsByFunction.set(key, group)
@@ -727,7 +750,7 @@ export function buildCostBreakdown(
     today_cost_usd: round6(getTodaySpend(executions)),
     by_provider: aggregateBreakdown(executions, execution => getExecutionProviderKey(execution), execution => getExecutionProviderLabel(execution), exchangeRateBrl),
     by_model: aggregateBreakdown(executions, execution => execution.model || 'unknown_model', execution => execution.model_label, exchangeRateBrl),
-    by_function: aggregateBreakdown(executions, execution => execution.function_key, execution => execution.function_label, exchangeRateBrl),
+    by_function: aggregateBreakdown(executions, execution => canonicalFunctionKey(execution.function_key), execution => canonicalFunctionLabel(execution.function_key), exchangeRateBrl),
     by_phase: aggregateBreakdown(executions, execution => execution.phase, execution => execution.phase_label, exchangeRateBrl),
     by_execution_state: aggregateBreakdown(
       executions,
@@ -738,8 +761,8 @@ export function buildCostBreakdown(
     by_agent: aggregateBreakdown(executions, execution => execution.agent_name, execution => execution.agent_name, exchangeRateBrl),
     by_agent_function: aggregateBreakdown(
       executions,
-      execution => `${execution.function_key}::${execution.agent_name || 'unknown_agent'}`,
-      execution => `${execution.function_label} · ${execution.agent_name || 'Não informado'}`,
+      execution => `${canonicalFunctionKey(execution.function_key)}::${execution.agent_name || 'unknown_agent'}`,
+      execution => `${canonicalFunctionLabel(execution.function_key)} · ${execution.agent_name || 'Não informado'}`,
       exchangeRateBrl,
     ),
     by_document_type: aggregateBreakdown(

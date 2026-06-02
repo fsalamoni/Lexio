@@ -196,16 +196,10 @@ export default function PlatformCostsPage() {
   const functionChart = useMemo(() => breakdown?.by_function.slice(0, 8).map(row => ({ label: row.label, usd: row.cost_usd })) ?? [], [breakdown])
   const providerChart = useMemo(() => breakdown?.by_provider.slice(0, 8).map(row => ({ label: row.label, usd: row.cost_usd })) ?? [], [breakdown])
   const executionStateChart = useMemo(() => breakdown?.by_execution_state?.slice(0, 8).map(row => ({ label: row.label, usd: row.cost_usd })) ?? [], [breakdown])
-  const documentV3Function = useMemo(
-    () => breakdown?.by_function.find(row => row.key === 'document_generation_v3') ?? null,
-    [breakdown],
-  )
-  const documentV4Function = useMemo(
-    () => breakdown?.by_function.find(row => row.key === 'document_generation_v4') ?? null,
-    [breakdown],
-  )
-  const chatOrchestratorV2Function = useMemo(
-    () => breakdown?.by_function.find(row => row.key === 'chat_orchestrator_v2') ?? null,
+  // All document-generation versions (v3/v4/legacy) are merged into the canonical
+  // `document_generation` row by the cost aggregator, so a single spotlight sums them.
+  const documentFunction = useMemo(
+    () => breakdown?.by_function.find(row => row.key === 'document_generation') ?? null,
     [breakdown],
   )
   const thesisAnalysisFunction = useMemo(
@@ -293,30 +287,12 @@ export default function PlatformCostsPage() {
               <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">{breakdown.by_provider[0]?.label || 'Sem dados'}</p>
             </div>
             <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Novo Documento</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Geração de Documentos</p>
               <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
-                {documentV3Function ? fmtUsd(documentV3Function.cost_usd) : 'Sem consumo'}
+                {documentFunction ? fmtUsd(documentFunction.cost_usd) : 'Sem consumo'}
               </p>
               <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
-                {documentV3Function ? `${fmtInt(documentV3Function.calls)} chamadas` : 'Nenhuma execução registrada'}
-              </p>
-            </div>
-            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Novo Documento (v4)</p>
-              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
-                {documentV4Function ? fmtUsd(documentV4Function.cost_usd) : 'Sem consumo'}
-              </p>
-              <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
-                {documentV4Function ? `${fmtInt(documentV4Function.calls)} chamadas` : 'Nenhuma execução registrada'}
-              </p>
-            </div>
-            <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--v2-ink-faint)]">Orquestrador Chat v2</p>
-              <p className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">
-                {chatOrchestratorV2Function ? fmtUsd(chatOrchestratorV2Function.cost_usd) : 'Sem consumo'}
-              </p>
-              <p className="mt-1 text-xs text-[var(--v2-ink-soft)]">
-                {chatOrchestratorV2Function ? `${fmtInt(chatOrchestratorV2Function.calls)} chamadas` : 'Nenhuma execução registrada'}
+                {documentFunction ? `${fmtInt(documentFunction.calls)} chamadas` : 'Nenhuma execução registrada'}
               </p>
             </div>
             <div className="rounded-[1.4rem] bg-[rgba(255,255,255,0.82)] px-4 py-3">

@@ -855,47 +855,43 @@ export default function CostTokensPage() {
             )}
           </CollapsibleSection>
 
-          <CollapsibleSection
-            id="section_document_v3"
-            title="Novo Documento"
-            icon={Sparkles}
-            iconColor="text-fuchsia-600"
-            badge={docV3Breakdown ? fmtUsd(docV3Breakdown.total_cost_usd) : undefined}
-            collapseState={collapseState}
-            onToggle={toggleCollapse}
-          >
-            {docV3Breakdown ? (
+          {docV3Breakdown && (
+            <CollapsibleSection
+              id="section_document_v3"
+              title="Novo Documento"
+              icon={Sparkles}
+              iconColor="text-fuchsia-600"
+              badge={fmtUsd(docV3Breakdown.total_cost_usd)}
+              collapseState={collapseState}
+              onToggle={toggleCollapse}
+            >
               <SectionBreakdown
                 sectionId="doc_v3"
                 breakdown={docV3Breakdown}
                 collapseState={collapseState}
                 onToggle={toggleCollapse}
               />
-            ) : (
-              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o Novo Documento.</p>
-            )}
-          </CollapsibleSection>
+            </CollapsibleSection>
+          )}
 
-          <CollapsibleSection
-            id="section_document_v4"
-            title="Novo Documento (v4)"
-            icon={Sparkles}
-            iconColor="text-teal-600"
-            badge={docV4Breakdown ? fmtUsd(docV4Breakdown.total_cost_usd) : undefined}
-            collapseState={collapseState}
-            onToggle={toggleCollapse}
-          >
-            {docV4Breakdown ? (
+          {docV4Breakdown && (
+            <CollapsibleSection
+              id="section_document_v4"
+              title="Novo Documento (v4)"
+              icon={Sparkles}
+              iconColor="text-teal-600"
+              badge={fmtUsd(docV4Breakdown.total_cost_usd)}
+              collapseState={collapseState}
+              onToggle={toggleCollapse}
+            >
               <SectionBreakdown
                 sectionId="doc_v4"
                 breakdown={docV4Breakdown}
                 collapseState={collapseState}
                 onToggle={toggleCollapse}
               />
-            ) : (
-              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o Novo Documento v4.</p>
-            )}
-          </CollapsibleSection>
+            </CollapsibleSection>
+          )}
 
           {/* ── Section 3: Thesis Analysis ─────────────────────────────── */}
           <CollapsibleSection
@@ -1095,26 +1091,24 @@ export default function CostTokensPage() {
             )}
           </CollapsibleSection>
 
-          <CollapsibleSection
-            id="section_presentation_pipeline_v2"
-            title="Pipeline de Apresentação v2"
-            icon={Sparkles}
-            iconColor="text-fuchsia-600"
-            badge={presentationV2Breakdown ? fmtUsd(presentationV2Breakdown.total_cost_usd) : undefined}
-            collapseState={collapseState}
-            onToggle={toggleCollapse}
-          >
-            {presentationV2Breakdown ? (
+          {presentationV2Breakdown && (
+            <CollapsibleSection
+              id="section_presentation_pipeline_v2"
+              title="Pipeline de Apresentação v2"
+              icon={Sparkles}
+              iconColor="text-fuchsia-600"
+              badge={fmtUsd(presentationV2Breakdown.total_cost_usd)}
+              collapseState={collapseState}
+              onToggle={toggleCollapse}
+            >
               <SectionBreakdown
                 sectionId="presentation_pipeline_v2"
                 breakdown={presentationV2Breakdown}
                 collapseState={collapseState}
                 onToggle={toggleCollapse}
               />
-            ) : (
-              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o pipeline de apresentação v2.</p>
-            )}
-          </CollapsibleSection>
+            </CollapsibleSection>
+          )}
 
           {/* ── Section 13: Chat Orchestrator ──────────────────────── */}
           <CollapsibleSection
@@ -1138,27 +1132,26 @@ export default function CostTokensPage() {
             )}
           </CollapsibleSection>
 
-          {/* ── Section 14: Chat Orchestrator v2 (lean group) ────────── */}
-          <CollapsibleSection
-            id="section_chat_orchestrator_v2"
-            title="Orquestrador Chat v2"
-            icon={MessagesSquare}
-            iconColor="text-violet-600"
-            badge={chatOrchestratorV2Breakdown ? fmtUsd(chatOrchestratorV2Breakdown.total_cost_usd) : undefined}
-            collapseState={collapseState}
-            onToggle={toggleCollapse}
-          >
-            {chatOrchestratorV2Breakdown ? (
+          {/* Chat Orchestrator v2 (lean group) — merged into "Orquestrador (Chat)";
+              shown only if a separate v2 row ever surfaces. */}
+          {chatOrchestratorV2Breakdown && (
+            <CollapsibleSection
+              id="section_chat_orchestrator_v2"
+              title="Orquestrador Chat v2"
+              icon={MessagesSquare}
+              iconColor="text-violet-600"
+              badge={fmtUsd(chatOrchestratorV2Breakdown.total_cost_usd)}
+              collapseState={collapseState}
+              onToggle={toggleCollapse}
+            >
               <SectionBreakdown
                 sectionId="chat_orchestrator_v2"
                 breakdown={chatOrchestratorV2Breakdown}
                 collapseState={collapseState}
                 onToggle={toggleCollapse}
               />
-            ) : (
-              <p className="py-4 text-sm text-[var(--v2-ink-faint)]">Nenhum dado de custo para o orquestrador Chat v2.</p>
-            )}
-          </CollapsibleSection>
+            </CollapsibleSection>
+          )}
         </>
       )}
     </div>

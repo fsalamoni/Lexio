@@ -40,7 +40,7 @@ import {
   type PlatformUsageRow,
 } from '../lib/firestore-service'
 import { withTransientFirebaseAuthRetry } from '../lib/firebase-auth-retry'
-import { getExecutionStateLabel } from '../lib/cost-analytics'
+import { getExecutionStateLabel, canonicalFunctionKey, canonicalFunctionLabel } from '../lib/cost-analytics'
 import type { CostBreakdown, CostBreakdownItem, UsageExecutionRecord } from '../lib/cost-analytics'
 import { V2EmptyState, V2PageHero } from '../components/v2/V2PagePrimitives'
 import { buildWorkspaceSettingsPath } from '../lib/workspace-routes'
@@ -699,9 +699,10 @@ export default function PlatformAdminPanel() {
     }>()
 
     recentExecutions.forEach(execution => {
-      const functionKey = execution.function_key || execution.function_label || 'unknown'
+      // Group evolution versions (v2/v3/v4) under the canonical functionality.
+      const functionKey = execution.function_key ? canonicalFunctionKey(execution.function_key) : (execution.function_label || 'unknown')
       const current = grouped.get(functionKey) ?? {
-        functionLabel: execution.function_label || functionKey,
+        functionLabel: execution.function_key ? canonicalFunctionLabel(execution.function_key) : (execution.function_label || functionKey),
         calls: 0,
         retries: 0,
         fallbacks: 0,

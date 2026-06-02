@@ -46,7 +46,7 @@ describe('cost analytics coverage', () => {
     ]))
   })
 
-  it('surfaces the v4 single-agent pipeline as its own function with v4 phase labels', () => {
+  it('merges the v4 single-agent pipeline into the base document function, keeping v4 phase labels', () => {
     const executions = [
       createUsageExecutionRecord({
         source_type: 'document_generation_v4',
@@ -87,14 +87,16 @@ describe('cost analytics coverage', () => {
 
     const breakdown = buildCostBreakdown(executions)
 
-    expect(breakdown.by_function.find(item => item.key === 'document_generation_v4')?.label).toBe('Novo Documento (v4)')
+    // v4 no longer surfaces as its own function — it rolls into the base document line.
+    expect(breakdown.by_function.find(item => item.key === 'document_generation_v4')).toBeUndefined()
+    expect(breakdown.by_function.find(item => item.key === 'document_generation')?.label).toBe('Geração de documentos')
     expect(breakdown.by_phase.find(item => item.key === 'v4_agent_loop')?.label).toBe('V4: Loop do Agente')
     expect(breakdown.by_phase.find(item => item.key === 'v4_agent')?.label).toBe('V4: Agente Principal')
     expect(breakdown.by_phase.find(item => item.key === 'v4_critic')?.label).toBe('V4: Crítico')
     expect(breakdown.by_phase.find(item => item.key === 'v4_tool_search_jurisprudence')?.label).toBe('V4: Ferramenta · Jurisprudência')
   })
 
-  it('surfaces the v3 pipeline orchestrator as zero-cost operational usage', () => {
+  it('merges v3 pipeline usage into the base document function (zero-cost operational orchestrator)', () => {
     const executions = [
       createUsageExecutionRecord({
         source_type: 'document_generation_v3',
@@ -112,10 +114,11 @@ describe('cost analytics coverage', () => {
 
     const breakdown = buildCostBreakdown(executions)
 
-    expect(breakdown.by_function.find(item => item.key === 'document_generation_v3')?.label).toBe('Novo Documento')
+    expect(breakdown.by_function.find(item => item.key === 'document_generation_v3')).toBeUndefined()
+    expect(breakdown.by_function.find(item => item.key === 'document_generation')?.label).toBe('Geração de documentos')
     expect(breakdown.by_phase.find(item => item.key === 'v3_pipeline_orchestrator')?.label).toBe('V3: Orquestrador do Pipeline')
     expect(breakdown.by_agent.find(item => item.label === 'Orquestrador do Pipeline')?.cost_usd).toBe(0)
-    expect(breakdown.by_agent_function.find(item => item.key === 'document_generation_v3::Orquestrador do Pipeline')).toBeDefined()
+    expect(breakdown.by_agent_function.find(item => item.key === 'document_generation::Orquestrador do Pipeline')).toBeDefined()
   })
 
   it('labels chat attachment, export and multimodal operational usage', () => {
