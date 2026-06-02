@@ -593,9 +593,8 @@ export function parseStudioCriticVerdict(raw: string): StudioCriticVerdict {
   const match = cleaned.match(/\{[\s\S]*\}/)
   const fromMatch = match ? tryParse(match[0]) : null
   if (fromMatch) return fromMatch
-  // Unparseable verdict: the critic is advisory — accept the artifact instead of
-  // forcing a spurious revision round on a parse/truncation glitch.
-  return { score: 0, reasons: ['Veredito do crítico ilegível — artefato entregue sem bloquear.'], should_stop: true }
+  // Unparseable verdict: don't block delivery, but flag it for a revision.
+  return { score: 0, reasons: ['Veredito do crítico não pôde ser interpretado.'], should_stop: false }
 }
 
 // ── Specialist instructions per artifact type ────────────────────────────────
