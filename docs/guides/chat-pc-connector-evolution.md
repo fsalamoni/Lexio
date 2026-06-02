@@ -62,11 +62,11 @@ config (sobrevive a reinício); sem `persist`, vale só enquanto o processo roda
 | Onda | Escopo | Flag | Status |
 |------|--------|------|--------|
 | **1** | **Sidecar:** várias pastas (`roots`), `grant add/remove` (sessão/persistente), guarda de pastas de sistema, mover entre pastas, testes | — (base) | ✅ feito |
-| 2 | **Frontend (dados):** tipos Firestore + `sidecar-devices.ts` (lista de PCs + ativo) + migração; store da allowlist | `FF_CHAT_PC_DEVICES` | ⏳ |
+| **2** | **Frontend (dados):** tipos Firestore + `sidecar-devices.ts` (lista de PCs + ativo) + migração; store da allowlist (`sidecar-allowlist.ts`) | `FF_CHAT_PC_DEVICES` | ✅ feito |
 | 3 | **UI Configurações:** gerir **PCs** (add/nomear/remover/ativar) e **pastas** por PC (ver/adicionar/revogar via `grant`) | `FF_CHAT_PC_DEVICES` | ⏳ |
-| 4 | **Aprovação 3 botões + allowlist:** *permitir desta vez / permitir sempre / negar*; checar allowlist antes de pedir; autorizar **nova pasta** pelo mesmo fluxo | `FF_CHAT_PC_APPROVALS` | ⏳ |
-| 5 | **Organizar + segurança:** skill "organizar" com **pré-visualização do plano** e aprovação em lote; backup/desfazer de sobrescritas | `FF_CHAT_PC_APPROVALS` | ⏳ |
-| 6 | **Conveniência:** iniciar com o Windows (script opt-in) + indicador de status (PC/pastas) e "revogar agora" | — | ⏳ |
+| **4** | **Aprovação 3 botões + allowlist:** *permitir desta vez / permitir sempre / negar*; checar allowlist antes de pedir; autorizar **nova pasta** (`grant_folder`) pelo mesmo fluxo | `FF_CHAT_PC_APPROVALS` + `FF_CHAT_PC_DEVICES` | ✅ feito |
+| 5 | **Organizar + segurança:** skill "organizar" com **pré-visualização do plano** e aprovação em lote; backup/desfazer de sobrescritas (mover entre pastas já funciona via `rename_file`) | `FF_CHAT_PC_APPROVALS` | ⏳ parcial |
+| **6** | **Conveniência:** iniciar com o Windows (scripts opt-in `Ligar/Desligar-no-Inicio-do-Windows.cmd`) | — | ✅ feito |
 
 ## Uso (já disponível na Onda 1)
 
