@@ -99,7 +99,9 @@ function parseVerdict(raw: string): CriticVerdict {
     try {
       return validate(JSON.parse(match[0]))
     } catch {
-      return { score: 0, reasons: ['Veredito do crítico não pôde ser parseado.'], shouldStop: false }
+      // Critic is advisory — a parse glitch must not block or loop. Accept the
+      // current draft instead of forcing endless refinement.
+      return { score: 0, reasons: ['Veredito do crítico ilegível — rascunho aceito sem bloquear.'], shouldStop: true }
     }
   }
 }

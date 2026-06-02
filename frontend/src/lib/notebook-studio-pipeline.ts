@@ -593,8 +593,9 @@ export function parseStudioCriticVerdict(raw: string): StudioCriticVerdict {
   const match = cleaned.match(/\{[\s\S]*\}/)
   const fromMatch = match ? tryParse(match[0]) : null
   if (fromMatch) return fromMatch
-  // Unparseable verdict: don't block delivery, but flag it for a revision.
-  return { score: 0, reasons: ['Veredito do crítico não pôde ser interpretado.'], should_stop: false }
+  // Unparseable verdict: the critic is advisory — accept the artifact instead of
+  // forcing a spurious revision round on a parse/truncation glitch.
+  return { score: 0, reasons: ['Veredito do crítico ilegível — artefato entregue sem bloquear.'], should_stop: true }
 }
 
 // ── Specialist instructions per artifact type ────────────────────────────────
@@ -1173,7 +1174,7 @@ export async function runStudioPipeline(
         criticPrompt.user,
         models.studio_revisor,
         resolveFb('studio_revisor', models.studio_revisor),
-        1500,
+        4000,
         0.1,
         { signal },
       )
@@ -1409,7 +1410,7 @@ export async function runStudioPipelineV2(
       user: criticPrompt.user,
       model: criticModel,
       fallbackModels: resolveFb('studio_revisor', criticModel),
-      maxTokens: 1500,
+      maxTokens: 4000,
       temperature: 0.1,
       signal,
     })

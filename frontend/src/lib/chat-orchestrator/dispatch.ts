@@ -1,6 +1,7 @@
 import { callLLMWithMessages, callLLMWithMessagesFallback, type LLMResult } from '../llm-client'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS, CHAT_ORCHESTRATOR_V2_AGENT_DEFS } from '../model-config'
 import type { UsageExecutionRecord, UsageFunctionKey } from '../cost-analytics'
+import { EFFORT_PRESETS } from './effort-presets'
 
 /**
  * Resolve an agent definition across v1 + v2 rosters. Looked up lazily (not a
@@ -142,7 +143,12 @@ export async function dispatchSpecialistAgent(args: DispatchSpecialistArgs): Pro
   }
 
   const messages = buildSpecialistMessages(agentKey, task)
-  const resolvedMaxTokens = Math.max(512, Math.floor(maxTokens ?? Math.min(4_000, Math.max(1_000, Math.round((1 - ctx.budget.usedRatio()) * 4_000)))))
+  // Give specialists real room to finish (the critic's JSON, the writer's long
+  // answers): default to the effort's per-call cap instead of a stingy, shrinking
+  // 1k–4k window that truncated outputs (cut-off text) and broke critic JSON.
+  // `llm-client` auto-reduces this for models with smaller output limits.
+  const effortCap = EFFORT_PRESETS[ctx.effort]?.perCallTokenCap ?? 16_000
+  const resolvedMaxTokens = Math.max(2_000, Math.floor(maxTokens ?? effortCap))
 
   const startedAt = Date.now()
   let result: LLMResult
