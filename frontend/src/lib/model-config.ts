@@ -18,6 +18,9 @@ import {
   AUDIO_PIPELINE_AGENT_DEFS,
   CHAT_ORCHESTRATOR_AGENT_DEFS,
   CHAT_ORCHESTRATOR_V2_AGENT_DEFS,
+  CHAT_ORCHESTRATOR_V2_MODEL_DEFS,
+  CHAT_V2_MEDIA_AGENT_DEFS,
+  CHAT_V2_MEDIA_AGENT_KEYS,
   CONTEXT_DETAIL_AGENT_DEFS,
   DEFAULT_VIDEO_TTS_VOICE,
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
@@ -37,6 +40,9 @@ export {
   AUDIO_PIPELINE_AGENT_DEFS,
   CHAT_ORCHESTRATOR_AGENT_DEFS,
   CHAT_ORCHESTRATOR_V2_AGENT_DEFS,
+  CHAT_ORCHESTRATOR_V2_MODEL_DEFS,
+  CHAT_V2_MEDIA_AGENT_DEFS,
+  CHAT_V2_MEDIA_AGENT_KEYS,
   CONTEXT_DETAIL_AGENT_DEFS,
   DEFAULT_VIDEO_TTS_VOICE,
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
@@ -1344,10 +1350,15 @@ export async function resetChatOrchestratorModels(uid?: string): Promise<void> {
 /** Map from chat-orchestrator v2 agent key → model ID */
 export type ChatOrchestratorV2ModelMap = Record<string, string>
 
-/** Default model map for the chat orchestrator v2 pipeline (lean group + tools). */
+/**
+ * Default model map for the chat orchestrator v2 pipeline. Covers the lean
+ * conversational group AND the media-routing tool models (image/audio/
+ * presentation/video) so the v2 runtime can resolve every literal-media
+ * super-skill, mirroring v1's capabilities.
+ */
 export function getDefaultChatOrchestratorV2ModelMap(): ChatOrchestratorV2ModelMap {
   const map: ChatOrchestratorV2ModelMap = {}
-  for (const def of CHAT_ORCHESTRATOR_V2_AGENT_DEFS) {
+  for (const def of CHAT_ORCHESTRATOR_V2_MODEL_DEFS) {
     map[def.key] = def.defaultModel
   }
   return map
@@ -1355,12 +1366,12 @@ export function getDefaultChatOrchestratorV2ModelMap(): ChatOrchestratorV2ModelM
 
 /** Load chat orchestrator v2 model configuration. */
 export async function loadChatOrchestratorV2Models(uid?: string): Promise<ChatOrchestratorV2ModelMap> {
-  return loadScopedModelMap('chat_orchestrator_v2_models', CHAT_ORCHESTRATOR_V2_AGENT_DEFS, getDefaultChatOrchestratorV2ModelMap(), uid)
+  return loadScopedModelMap('chat_orchestrator_v2_models', CHAT_ORCHESTRATOR_V2_MODEL_DEFS, getDefaultChatOrchestratorV2ModelMap(), uid)
 }
 
 /** Save chat orchestrator v2 model configuration to Firestore. */
 export async function saveChatOrchestratorV2Models(models: ChatOrchestratorV2ModelMap, uid?: string): Promise<void> {
-  await saveScopedModelMap('chat_orchestrator_v2_models', CHAT_ORCHESTRATOR_V2_AGENT_DEFS, getDefaultChatOrchestratorV2ModelMap(), models, uid)
+  await saveScopedModelMap('chat_orchestrator_v2_models', CHAT_ORCHESTRATOR_V2_MODEL_DEFS, getDefaultChatOrchestratorV2ModelMap(), models, uid)
 }
 
 /** Reset chat orchestrator v2 models to defaults. */
@@ -1383,7 +1394,7 @@ export const AGENT_CONFIG_DEFS: Record<ScopedModelSettingsKey, AgentModelDef[]> 
   document_v3_models: DOCUMENT_V3_PIPELINE_AGENT_DEFS,
   document_v4_models: DOCUMENT_V4_PIPELINE_AGENT_DEFS,
   chat_orchestrator_models: CHAT_ORCHESTRATOR_AGENT_DEFS,
-  chat_orchestrator_v2_models: CHAT_ORCHESTRATOR_V2_AGENT_DEFS,
+  chat_orchestrator_v2_models: CHAT_ORCHESTRATOR_V2_MODEL_DEFS,
 }
 
 export async function validateScopedAgentModels(

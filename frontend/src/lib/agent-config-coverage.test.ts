@@ -57,11 +57,17 @@ describe('user-scoped agent configuration coverage', () => {
     ])
   })
 
-  it('registers the lean chat orchestrator v2 agent group', () => {
+  it('registers the lean chat orchestrator v2 agent group plus media-routing tool models', () => {
     expect(AGENT_CONFIG_DEFS.chat_orchestrator_v2_models.map(agent => agent.key)).toEqual([
       'cv2_orchestrator',
       'cv2_worker',
       'cv2_critic',
+      // Media-routing tool models shared with v1 — required so the v2 runtime
+      // can produce literal image/audio/presentation/video artifacts.
+      'chat_image_generator',
+      'chat_audio_generator',
+      'chat_presentation_designer',
+      'chat_video_generator',
     ])
   })
 

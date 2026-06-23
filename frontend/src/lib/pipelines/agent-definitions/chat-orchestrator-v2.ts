@@ -1,4 +1,5 @@
 import type { AgentModelDef } from '../../model-config'
+import { CHAT_ORCHESTRATOR_AGENT_DEFS } from './chat-orchestrator'
 
 /**
  * Chat Orchestrator v2 — lean agent group + rich tools.
@@ -50,4 +51,45 @@ export const CHAT_ORCHESTRATOR_V2_AGENT_DEFS: AgentModelDef[] = [
     requiredCapability: 'text',
     bestModelNote: 'Modelo balanced — uma avaliação crítica independente do rascunho',
   },
+]
+
+/**
+ * Media-routing agent keys whose models the literal-media super-skills
+ * (`generate_image`, `generate_audio`, `generate_presentation`,
+ * `generate_video`) resolve at runtime. The v2 lean group drives the SAME rich
+ * tool catalog as v1, so these agents must be configurable and resolvable under
+ * v2 too — otherwise the orchestrator can plan media but never produce the real
+ * artifact (it would look up a model that only exists in the v1 roster).
+ *
+ * They are NOT conversational agents: the lead never reaches them via
+ * `call_agent` (that is gated by the profile's callable set), they are only
+ * driven through the media super-skills. Reusing the exact v1 keys keeps the
+ * super-skills unchanged and the cost analytics attribution stable.
+ */
+export const CHAT_V2_MEDIA_AGENT_KEYS = [
+  'chat_image_generator',
+  'chat_audio_generator',
+  'chat_presentation_designer',
+  'chat_video_generator',
+] as const
+
+/**
+ * The media-routing defs, reused verbatim from the v1 roster (single source of
+ * truth for labels, descriptions and required capabilities), ordered to match
+ * `CHAT_V2_MEDIA_AGENT_KEYS`.
+ */
+export const CHAT_V2_MEDIA_AGENT_DEFS: AgentModelDef[] = CHAT_V2_MEDIA_AGENT_KEYS
+  .map(key => CHAT_ORCHESTRATOR_AGENT_DEFS.find(def => def.key === key))
+  .filter((def): def is AgentModelDef => Boolean(def))
+
+/**
+ * Full set of agents persisted under the `chat_orchestrator_v2_models` scoped
+ * config: the lean conversational group plus the media-routing tool models.
+ * The lean group identity (`CHAT_ORCHESTRATOR_V2_AGENT_DEFS`) stays intact for
+ * the engine, profile and callable-agent gating; this combined list only drives
+ * the model map (defaults / load / save / validation) and the config card.
+ */
+export const CHAT_ORCHESTRATOR_V2_MODEL_DEFS: AgentModelDef[] = [
+  ...CHAT_ORCHESTRATOR_V2_AGENT_DEFS,
+  ...CHAT_V2_MEDIA_AGENT_DEFS,
 ]

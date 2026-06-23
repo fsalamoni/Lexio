@@ -743,7 +743,17 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     try {
       if (mock) {
         models = useChatV2
-          ? { cv2_orchestrator: 'demo/orchestrator', cv2_worker: 'demo/worker', cv2_critic: 'demo/critic' }
+          ? {
+              cv2_orchestrator: 'demo/orchestrator',
+              cv2_worker: 'demo/worker',
+              cv2_critic: 'demo/critic',
+              // Media-routing tool models so literal media (image/audio/
+              // presentation/video) works in the v2 demo, mirroring v1.
+              chat_image_generator: 'demo/image-generator',
+              chat_audio_generator: 'demo/audio-generator',
+              chat_presentation_designer: 'demo/presentation-designer',
+              chat_video_generator: 'demo/video-generator',
+            }
           : mockModelMap()
         fallbackModels = {}
         apiKey = 'demo'

@@ -100,12 +100,16 @@ const MAX_EMENTA_SOURCE_CHARS = 8000
 const DOCUMENT_AGENT_MODELS_CACHE_KEY = 'lexio:document-agent-models:v1'
 /** Keep cache short to reduce stale settings risk after admin changes. */
 const DOCUMENT_AGENT_MODELS_CACHE_TTL_MS = 5 * 60 * 1000
-/** Standard output budget for the Redator agent. Sized for long, well-founded
- * documents (transcribed law articles, full súmula text, doctrine). Models with
- * smaller output limits are auto-reduced by the LLM client. */
-const REDATOR_DEFAULT_MAX_TOKENS = 16000
-/** Optimized output budget for faster Redator runs (feature-flagged). */
-const REDATOR_FAST_MAX_TOKENS = 12000
+/** Standard output budget for the Redator agent. Sized to never truncate long
+ * legal documents (transcribed law articles, full súmula text, extensive
+ * doctrine and reasoning). This requests the high end that premium models
+ * support; OpenRouter (and the LLM client's budget-retry) auto-reduce the value
+ * for models with smaller output limits, so the document uses the full window
+ * the chosen model allows instead of being cut off at an artificial ceiling. */
+const REDATOR_DEFAULT_MAX_TOKENS = 48000
+/** Output budget for faster Redator runs (feature-flagged). Still generous so a
+ * document is never interrupted mid-text for lack of room. */
+const REDATOR_FAST_MAX_TOKENS = 32000
 /** Minimum quality score required to keep the fast Redator output. */
 const REDATOR_ROLLBACK_MIN_QUALITY_DEFAULT = 82
 
