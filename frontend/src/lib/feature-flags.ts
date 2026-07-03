@@ -241,6 +241,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     devToggleable: true,
   },
   {
+    key: 'FF_DESIGN_STUDIO',
+    label: 'Design Studio',
+    description: 'Habilita o Design Studio: gera slides, sites, apps (web/mobile), wireframes, documentos e animações a partir de um briefing, com amostra ao vivo e exportação. Fases seguintes adicionam agente de IA, importação/exportação de templates, clonagem de designs por URL e aplicação em repositórios conectados.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_DESIGN_STUDIO',
+    devToggleable: true,
+  },
+  {
     key: 'FF_CHAT_ENGINE_PLUS',
     label: 'Chat: Motor aprimorado',
     description: 'Crítico ciente de domínio e multi-eixo, teto de custo em USD por esforço, cache de prompt do sistema e memória rolante entre turnos.',

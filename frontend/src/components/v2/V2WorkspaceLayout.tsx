@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { ExternalLink, LogOut, Menu, Sparkles, UserCircle, X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { buildWorkspaceShellPath } from '../../lib/workspace-routes'
+import { isEnabled } from '../../lib/feature-flags'
 import ConfirmDialog from '../ConfirmDialog'
 
 interface WorkspaceNavItem {
@@ -75,6 +76,9 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
         { label: 'Novo documento', to: '/documents/new', activePatterns: ['/documents/new', '/documents/new-v3'] },
         { label: 'Documentos', to: '/documents', activePatterns: ['/documents', '/documents/:id', '/documents/:id/edit'] },
         { label: 'Caderno de pesquisa', to: '/notebook', activePatterns: ['/notebook'] },
+        ...(isEnabled('FF_DESIGN_STUDIO')
+          ? [{ label: 'Design Studio', to: '/design', activePatterns: ['/design'] }]
+          : []),
         { label: 'Biblioteca e acervo', to: '/upload', activePatterns: ['/upload'] },
         { label: 'Banco de teses', to: '/theses', activePatterns: ['/theses'] },
       ],
