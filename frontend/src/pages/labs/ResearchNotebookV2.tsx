@@ -5886,7 +5886,7 @@ Instruções:
 
               {activeSection === 'chat' && (
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-                  <section className="v2-panel flex h-[calc(100vh-12rem)] min-h-[520px] flex-col overflow-hidden">
+                  <section className="v2-panel flex min-h-[calc(100vh-8rem)] max-h-[calc(100vh-2rem)] flex-col overflow-hidden">
                     <div className="border-b border-[var(--v2-line-soft)] px-5 py-4 lg:px-6">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
@@ -5942,7 +5942,7 @@ Instruções:
                             const isStreamingMessage = message.id === chatStreamingMessageId
                             return (
                               <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[88%] rounded-[1.5rem] px-4 py-3 text-sm shadow-[var(--v2-shadow-soft)] ${message.role === 'user' ? 'rounded-br-md bg-[var(--v2-ink-strong)] text-white' : 'rounded-bl-md border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] text-[var(--v2-ink-strong)]'}`}>
+                                <div className={`rounded-[1.5rem] px-4 py-3 text-sm shadow-[var(--v2-shadow-soft)] ${message.role === 'user' ? 'max-w-[85%] rounded-br-md bg-[var(--v2-ink-strong)] text-white' : 'w-full max-w-full rounded-bl-md border border-[var(--v2-line-soft)] bg-[rgba(255,255,255,0.9)] text-[var(--v2-ink-strong)]'}`}>
                                   {message.role === 'assistant' ? (
                                     <>
                                       {message.content ? (

@@ -875,6 +875,14 @@ export interface ChatApprovalRequestData {
   summary: string
   risk_level: 'low' | 'medium' | 'high'
   requested_permissions: ChatSidecarPermission[]
+  /**
+   * Discriminates a plain action approval from a plan proposal card. Absent /
+   * `'action'` keeps the legacy approve-per-operation behavior; `'plan'` means
+   * `plan` carries a structured proposal rendered as a plan card.
+   */
+  kind?: 'action' | 'plan'
+  /** Structured plan payload when `kind === 'plan'`. */
+  plan?: ChatPlanProposalData
   expires_at?: string
   decided_at?: string
   decided_by?: string
@@ -888,6 +896,8 @@ export interface ChatPendingQuestionData {
   approval_id?: string
   resume_tool?: string
   resume_args?: Record<string, unknown>
+  /** Present when the pending question is a plan proposal card (mode `plan`). */
+  plan?: ChatPlanProposalData
 }
 
 export interface ChatSidecarAuditEntryData {
@@ -1195,6 +1205,67 @@ export interface PlatformFunctionRolloutPolicyPlan {
  * runtime; the value persisted on the conversation is the raw label.
  */
 export type ChatEffortLevel = 'rapido' | 'medio' | 'profundo' | 'deep_research'
+
+/**
+ * Execution mode of the orchestrator connector agent, chosen per conversation
+ * and surfaced in the chat header:
+ *  - `auto`: side-effectful (write) skills run without pausing (branch guards
+ *    such as blocking `main`/`master` still apply).
+ *  - `ask`: every write operation pauses for explicit approval (aprovar /
+ *    rejeitar / ajustar) — the original approval-gate flow.
+ *  - `plan`: the agent studies the request and returns a structured plan
+ *    (steps, affected files, commands) without executing; the user then
+ *    approves, rejects or revises it.
+ */
+export type ChatAgentMode = 'auto' | 'ask' | 'plan'
+
+export const CHAT_AGENT_MODES: ChatAgentMode[] = ['auto', 'ask', 'plan']
+
+export const DEFAULT_CHAT_AGENT_MODE: ChatAgentMode = 'ask'
+
+export function isChatAgentMode(value: unknown): value is ChatAgentMode {
+  return value === 'auto' || value === 'ask' || value === 'plan'
+}
+
+/** Lifecycle of a plan proposal card (mode `plan`). */
+export type ChatPlanProposalState = 'proposed' | 'approved' | 'rejected' | 'revising'
+
+/** A single actionable step inside a plan proposal. */
+export interface ChatPlanStep {
+  /** Short imperative description of the step. */
+  title: string
+  /** Optional longer detail/rationale. */
+  detail?: string
+  /** Connector skill/tool that will carry the step out (e.g. `github_commit`). */
+  tool?: string
+  /** Files this step creates, updates or removes. */
+  files?: string[]
+  /** Shell/git commands the step will run, when applicable. */
+  commands?: string[]
+}
+
+/**
+ * Structured plan produced in `plan` mode. Stored alongside the approval
+ * request that gates it (see `ChatApprovalRequestData.plan`) so the same
+ * `updateChatApprovalRequest` transitions drive its state.
+ */
+export interface ChatPlanProposalData {
+  state: ChatPlanProposalState
+  /** One-line summary of the objective. */
+  summary: string
+  /** Ordered steps the agent intends to execute once approved. */
+  steps: ChatPlanStep[]
+  /** Union of files touched across all steps (for a quick scope overview). */
+  affected_files?: string[]
+  /** Commands the plan will run once approved. */
+  commands?: string[]
+  /** Target repository the plan is scoped to (owner/repo). */
+  target_repo?: string
+  /** Free-text adjustments provided by the user when revising the plan. */
+  revision_notes?: string
+  /** Incremented each time the user asks for a revision (planning turns). */
+  revision_count?: number
+}
 
 export type ChatArtifactKind =
   | 'text'
@@ -1593,6 +1664,14 @@ export type ChatTrailEvent =
       reason?: string
       ts: string
     }
+  | {
+      type: 'plan_proposed'
+      approval_id: string
+      summary: string
+      step_count: number
+      revision_count?: number
+      ts: string
+    }
   | { type: 'final_answer'; ts: string; elapsed_ms?: number; iterations?: number; budget_used_ratio?: number }
   | { type: 'budget_hit'; reason: string; ts: string; elapsed_ms?: number }
   | { type: 'error'; message: string; ts: string }
@@ -1615,6 +1694,8 @@ export interface ChatConversationData {
   id?: string
   title: string
   effort: ChatEffortLevel
+  /** Per-conversation execution mode for the connector agent (default `ask`). */
+  agent_mode?: ChatAgentMode
   /** Display-only path the sidecar is rooted at, set when the user pairs the helper. */
   sidecar_root_path?: string
   /** Short preview of the latest assistant answer (used in the sidebar list). */

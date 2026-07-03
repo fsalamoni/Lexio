@@ -5,7 +5,7 @@ import { TaskManagerProvider } from './contexts/TaskManagerContext'
 import { ToastProvider } from './components/Toast'
 import TaskBar from './components/TaskBar'
 import { useApplyPlatformSkin } from './components/ThemeSkinSelector'
-import { clearRuntimeFeatureFlags, FEATURE_FLAGS_UPDATED_EVENT } from './lib/feature-flags'
+import { clearRuntimeFeatureFlags, FEATURE_FLAGS_UPDATED_EVENT, isEnabled } from './lib/feature-flags'
 import { IS_FIREBASE } from './lib/firebase'
 import { hydrateRuntimeFeatureFlags } from './lib/settings-store'
 import {
@@ -32,6 +32,7 @@ const Onboarding = lazy(() => import('./pages/Onboarding'))
 const ThesisBank = lazy(() => import('./pages/ThesisBank'))
 const ResearchNotebookV2 = lazy(() => import('./pages/labs/ResearchNotebookV2'))
 const Chat = lazy(() => import('./pages/Chat'))
+const DesignStudio = lazy(() => import('./pages/labs/DesignStudio'))
 const ProfileV2 = lazy(() => import('./pages/labs/ProfileV2'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 const V2WorkspaceLayout = lazy(() => import('./components/v2/V2WorkspaceLayout'))
@@ -102,6 +103,7 @@ function AuthenticatedShell() {
         <Route path="/upload" element={<Upload />} />
         <Route path="/theses" element={<ThesisBank />} />
         <Route path="/notebook" element={<ResearchNotebookV2 />} />
+        {isEnabled('FF_DESIGN_STUDIO') && <Route path="/design" element={<DesignStudio />} />}
         <Route path="/settings" element={<SettingsPanel />} />
         <Route path="/settings/costs" element={<PersonalCostTokensPage />} />
         <Route path="/admin" element={<AdminRoute><PlatformAdminPanel /></AdminRoute>} />

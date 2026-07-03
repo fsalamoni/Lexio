@@ -518,6 +518,24 @@ export function projectTrailToSteps(trail: ChatTrailEvent[]): TrailStep[] {
         break
       }
 
+      case 'plan_proposed': {
+        const step: TrailStep = {
+          id: mkId('plan', event.ts),
+          kind: 'approval',
+          ts: event.ts,
+          actor: 'Orquestrador',
+          status: 'awaiting',
+          action: event.revision_count
+            ? `Plano revisado (v${event.revision_count + 1}): ${event.summary}`
+            : `Plano proposto (${event.step_count} passo(s)): ${event.summary}`,
+          notices: [event.summary],
+          sourceEventCount: 1,
+        }
+        steps.push(step)
+        approvals.set(event.approval_id, step)
+        break
+      }
+
       case 'approval_resolved': {
         const step = approvals.get(event.approval_id)
         if (step) {

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   Bot,
   Brain,
+  Check,
   CheckCircle2,
   CircleDot,
   Cpu,
@@ -13,11 +14,14 @@ import {
   Hourglass,
   ListChecks,
   PackageCheck,
+  Pencil,
   RefreshCw,
   Sparkles,
+  Terminal,
   Upload as UploadIcon,
   User,
   Wrench,
+  X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import type {
@@ -25,6 +29,7 @@ import type {
   ChatArtifactExportRef,
   ChatDeliverableBundle,
   ChatDeliverableItem,
+  ChatPlanProposalData,
   ChatTrailEvent,
   ChatTurnAttachment,
   ChatTurnData,
@@ -140,11 +145,18 @@ function TurnBlock({
             </>
           )}
       {turn.pending_question && (
-        <PendingQuestion
-          question={turn.pending_question.text}
-          options={turn.pending_question.options}
-          onSendPendingAnswer={onSendPendingAnswer}
-        />
+        turn.pending_question.plan ? (
+          <PlanProposalCard
+            plan={turn.pending_question.plan}
+            onSendPendingAnswer={onSendPendingAnswer}
+          />
+        ) : (
+          <PendingQuestion
+            question={turn.pending_question.text}
+            options={turn.pending_question.options}
+            onSendPendingAnswer={onSendPendingAnswer}
+          />
+        )
       )}
       {turn.assistant_markdown && <AssistantBubble markdown={turn.assistant_markdown} />}
       {deliverableBundle && (
@@ -268,6 +280,182 @@ function PendingQuestion({
         </div>
       )}
       <p className="mt-2 text-xs text-amber-700">Use uma opção ou responda no campo abaixo para continuar.</p>
+    </div>
+  )
+}
+
+function PlanProposalCard({
+  plan,
+  onSendPendingAnswer,
+}: {
+  plan: ChatPlanProposalData
+  onSendPendingAnswer?: (answer: string) => void
+}) {
+  const [revising, setRevising] = useState(false)
+  const [revisionText, setRevisionText] = useState('')
+  const disabled = !onSendPendingAnswer
+
+  const submitRevision = () => {
+    const notes = revisionText.trim()
+    if (!notes) return
+    onSendPendingAnswer?.(notes)
+    setRevisionText('')
+    setRevising(false)
+  }
+
+  return (
+    <div className="ml-11 rounded-2xl border border-indigo-300 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-950">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-indigo-700">
+        <ListChecks className="h-3.5 w-3.5" />
+        Plano proposto
+        {plan.target_repo && (
+          <span className="ml-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-indigo-700">
+            {plan.target_repo}
+          </span>
+        )}
+        {typeof plan.revision_count === 'number' && plan.revision_count > 0 && (
+          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-indigo-700">
+            revisão {plan.revision_count}
+          </span>
+        )}
+      </div>
+      {plan.summary && <p className="whitespace-pre-wrap text-sm">{plan.summary}</p>}
+
+      {plan.steps.length > 0 && (
+        <ol className="mt-3 flex list-none flex-col gap-2">
+          {plan.steps.map((step, idx) => (
+            <li key={`step-${idx}`} className="rounded-lg border border-indigo-200 bg-white/80 px-3 py-2">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-semibold text-white">
+                  {idx + 1}
+                </span>
+                <div className="flex-1">
+                  <div className="font-semibold text-indigo-900">{step.title}</div>
+                  {step.detail && <div className="mt-0.5 whitespace-pre-wrap text-xs text-indigo-800">{step.detail}</div>}
+                  {step.files && step.files.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {step.files.map(file => (
+                        <span key={file} className="inline-flex items-center gap-1 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] text-indigo-700">
+                          <FileText className="h-2.5 w-2.5" />
+                          {file}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {step.commands && step.commands.length > 0 && (
+                    <div className="mt-1 flex flex-col gap-1">
+                      {step.commands.map((cmd, cIdx) => (
+                        <code key={`cmd-${cIdx}`} className="flex items-center gap-1 rounded bg-indigo-950/90 px-2 py-1 font-mono text-[11px] text-indigo-50">
+                          <Terminal className="h-3 w-3 shrink-0 opacity-70" />
+                          {cmd}
+                        </code>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {plan.affected_files && plan.affected_files.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-indigo-700">Arquivos afetados</div>
+          <div className="flex flex-wrap gap-1">
+            {plan.affected_files.map(file => (
+              <span key={file} className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-indigo-800">
+                <FileText className="h-2.5 w-2.5" />
+                {file}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {plan.commands && plan.commands.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-indigo-700">Comandos</div>
+          <div className="flex flex-col gap-1">
+            {plan.commands.map((cmd, idx) => (
+              <code key={`gcmd-${idx}`} className="flex items-center gap-1 rounded bg-indigo-950/90 px-2 py-1 font-mono text-[11px] text-indigo-50">
+                <Terminal className="h-3 w-3 shrink-0 opacity-70" />
+                {cmd}
+              </code>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {revising ? (
+        <div className="mt-3">
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-indigo-700">
+            Descreva os ajustes desejados
+          </label>
+          <textarea
+            value={revisionText}
+            onChange={e => setRevisionText(e.target.value)}
+            rows={3}
+            autoFocus
+            placeholder="Ex.: inclua testes para o novo endpoint e evite alterar o arquivo X…"
+            className="w-full rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm text-indigo-950 focus:border-indigo-500 focus:outline-none"
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={submitRevision}
+              disabled={disabled || !revisionText.trim()}
+              className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Enviar revisão
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRevising(false)
+                setRevisionText('')
+              }}
+              className="inline-flex items-center gap-1 rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onSendPendingAnswer?.('aprovar')}
+            disabled={disabled}
+            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Check className="h-3.5 w-3.5" />
+            Aprovar
+          </button>
+          <button
+            type="button"
+            onClick={() => onSendPendingAnswer?.('rejeitar')}
+            disabled={disabled}
+            className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <X className="h-3.5 w-3.5" />
+            Rejeitar
+          </button>
+          <button
+            type="button"
+            onClick={() => setRevising(true)}
+            disabled={disabled}
+            className="inline-flex items-center gap-1 rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Revisar
+          </button>
+        </div>
+      )}
+      <p className="mt-2 text-xs text-indigo-700">
+        Aprovar executa o plano em modo automático, restrito ao escopo planejado. Revisar reinicia o planejamento com seus comentários.
+      </p>
     </div>
   )
 }

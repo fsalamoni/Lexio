@@ -104,6 +104,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     turnId: input.turnId,
     userInput: input.user_input,
     effort: input.effort,
+    agentMode: input.agentMode,
     budget,
     signal: input.signal,
     emit: emitTrail,
@@ -253,6 +254,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
           approval_id: result.awaiting_user.approval_id,
           resume_tool: result.awaiting_user.resume_tool,
           resume_args: result.awaiting_user.resume_args,
+          plan: result.awaiting_user.plan,
         },
         llm_executions: budget.records(),
       }
@@ -802,6 +804,11 @@ async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Pro
   }
 
   const profile = ctx.profile ?? DEFAULT_V1_PROFILE
+  // In plan mode the orchestrator turn produces a structured plan proposal
+  // (rather than executing), so attribute its cost to the planning function key.
+  const planning = ctx.agentMode === 'plan'
+  const functionKey = planning ? 'chat_agent_planning' : profile.functionKey
+  const functionLabel = planning ? 'Chat: Planejamento do agente' : profile.functionLabel
   const { raw, usage } = await llmCall({
     systemPrompt,
     history,
@@ -814,8 +821,8 @@ async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Pro
     perCallTokenCap,
     ...(typeof temperature === 'number' ? { temperature } : {}),
     agentLabel: profile.orchestratorLabel,
-    functionKey: profile.functionKey,
-    functionLabel: profile.functionLabel,
+    functionKey,
+    functionLabel,
     onToken,
   })
   if (usage) {

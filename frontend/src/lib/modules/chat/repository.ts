@@ -17,6 +17,7 @@ import {
 import { normalizeFirestoreDocumentId } from '../../core/firestore'
 import { LEGACY_RECOVERED_CONVERSATION_TITLE } from '../../chat-conversation-integrity'
 import type {
+  ChatAgentMode,
   ChatAgentWorkPackage,
   ChatApprovalRequestData,
   ChatArtifactData,
@@ -24,6 +25,7 @@ import type {
   ChatArtifactVersionData,
   ChatConversationData,
   ChatEffortLevel,
+  ChatPlanProposalData,
   ChatSidecarPermission,
   ChatSidecarAuditEntryData,
   ChatSidecarCommandData,
@@ -32,6 +34,7 @@ import type {
   ChatWorkspaceBindingData,
   ChatWorkspaceRootData,
 } from '../../firestore-types'
+import { isChatAgentMode } from '../../firestore-types'
 
 export type ChatRepositoryDependencies = {
   ensureFirestore: () => Firestore
@@ -43,7 +46,7 @@ export type ChatRepositoryDependencies = {
   stripUndefined: <T extends Record<string, unknown>>(value: T) => T
 }
 
-type ChatConversationInput = Partial<Pick<ChatConversationData, 'title' | 'effort' | 'sidecar_root_path' | 'last_preview'>>
+type ChatConversationInput = Partial<Pick<ChatConversationData, 'title' | 'effort' | 'agent_mode' | 'sidecar_root_path' | 'last_preview'>>
 
 const CHAT_CONVERSATIONS_COLLECTION = 'chat_conversations'
 const CHAT_TURNS_SUBCOLLECTION = 'turns'
@@ -62,6 +65,7 @@ const MAX_APPROVAL_COMMAND_IDS = 25
 const MAX_APPROVAL_TITLE_CHARS = 160
 const MAX_APPROVAL_SUMMARY_CHARS = 2_000
 const MAX_APPROVAL_ACTOR_CHARS = 120
+const MAX_PLAN_STEPS = 50
 const ALLOWED_APPROVAL_PERMISSIONS: ChatSidecarPermission[] = ['read', 'write', 'delete', 'rename', 'execute', 'network']
 
 function resolveConversationTitleForRepair(data: ChatConversationInput): string {
@@ -101,20 +105,62 @@ function userSubcollectionDoc(db: Firestore, uid: string, name: string, document
   return doc(db, 'users', uid, name, normalizeFirestoreDocumentId(documentId))
 }
 
+function sanitizeChatPlanProposal(value: unknown): ChatPlanProposalData | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const raw = value as Partial<ChatPlanProposalData>
+  const state = raw.state === 'approved' || raw.state === 'rejected' || raw.state === 'revising' ? raw.state : 'proposed'
+  const steps = Array.isArray(raw.steps)
+    ? raw.steps.slice(0, MAX_PLAN_STEPS).map(step => {
+        const s = (step ?? {}) as unknown as Record<string, unknown>
+        return sanitizeStripUndefined({
+          title: clipApprovalText(String(s.title ?? ''), MAX_APPROVAL_TITLE_CHARS) || 'Passo',
+          detail: s.detail != null ? clipApprovalText(String(s.detail), MAX_APPROVAL_SUMMARY_CHARS) || undefined : undefined,
+          tool: s.tool != null ? clipApprovalText(String(s.tool), MAX_APPROVAL_TITLE_CHARS) || undefined : undefined,
+          files: Array.isArray(s.files) ? s.files.map(f => String(f)).filter(Boolean).slice(0, MAX_PLAN_STEPS) : undefined,
+          commands: Array.isArray(s.commands) ? s.commands.map(c => String(c)).filter(Boolean).slice(0, MAX_PLAN_STEPS) : undefined,
+        })
+      })
+    : []
+  return sanitizeStripUndefined({
+    state,
+    summary: clipApprovalText(String(raw.summary ?? ''), MAX_APPROVAL_SUMMARY_CHARS) || 'Plano proposto pelo agente.',
+    steps,
+    affected_files: Array.isArray(raw.affected_files) ? raw.affected_files.map(f => String(f)).filter(Boolean).slice(0, MAX_PLAN_STEPS) : undefined,
+    commands: Array.isArray(raw.commands) ? raw.commands.map(c => String(c)).filter(Boolean).slice(0, MAX_PLAN_STEPS) : undefined,
+    target_repo: raw.target_repo != null ? clipApprovalText(String(raw.target_repo), MAX_APPROVAL_TITLE_CHARS) || undefined : undefined,
+    revision_notes: raw.revision_notes != null ? clipApprovalText(String(raw.revision_notes), MAX_APPROVAL_SUMMARY_CHARS) || undefined : undefined,
+    revision_count: typeof raw.revision_count === 'number' && Number.isFinite(raw.revision_count) ? Math.max(0, Math.trunc(raw.revision_count)) : undefined,
+  }) as ChatPlanProposalData
+}
+
+function sanitizeStripUndefined<T extends Record<string, unknown>>(value: T): T {
+  const out = {} as Record<string, unknown>
+  for (const [k, v] of Object.entries(value)) {
+    if (v !== undefined) out[k] = v
+  }
+  return out as T
+}
+
+function normalizeApprovalKind(value: unknown): 'action' | 'plan' | undefined {
+  return value === 'plan' ? 'plan' : value === 'action' ? 'action' : undefined
+}
+
 function sanitizeChatApprovalRequestData(
   data: Omit<ChatApprovalRequestData, 'id' | 'conversation_id' | 'created_at' | 'updated_at' | 'status'> & { status?: ChatApprovalRequestData['status'] },
 ): Omit<ChatApprovalRequestData, 'id' | 'conversation_id' | 'created_at' | 'updated_at'> {
-  return {
+  return sanitizeStripUndefined({
     command_ids: normalizeApprovalCommandIds(data.command_ids),
     status: normalizeApprovalStatus(data.status),
     title: clipApprovalText(data.title, MAX_APPROVAL_TITLE_CHARS) || 'Aprovar ação do chat',
     summary: clipApprovalText(data.summary, MAX_APPROVAL_SUMMARY_CHARS) || 'O orquestrador precisa de aprovação explícita para prosseguir.',
     risk_level: normalizeApprovalRisk(data.risk_level),
     requested_permissions: normalizeApprovalPermissions(data.requested_permissions),
+    kind: normalizeApprovalKind(data.kind),
+    plan: sanitizeChatPlanProposal(data.plan),
     expires_at: normalizeOptionalIsoLike(data.expires_at),
     decided_at: normalizeOptionalIsoLike(data.decided_at),
     decided_by: clipApprovalText(data.decided_by, MAX_APPROVAL_ACTOR_CHARS) || undefined,
-  }
+  }) as Omit<ChatApprovalRequestData, 'id' | 'conversation_id' | 'created_at' | 'updated_at'>
 }
 
 function sanitizeChatApprovalUpdateData(data: Partial<ChatApprovalRequestData>): Partial<ChatApprovalRequestData> {
@@ -125,6 +171,8 @@ function sanitizeChatApprovalUpdateData(data: Partial<ChatApprovalRequestData>):
     summary: data.summary != null ? (clipApprovalText(data.summary, MAX_APPROVAL_SUMMARY_CHARS) || undefined) : undefined,
     risk_level: data.risk_level ? normalizeApprovalRisk(data.risk_level) : undefined,
     requested_permissions: data.requested_permissions ? normalizeApprovalPermissions(data.requested_permissions) : undefined,
+    kind: data.kind != null ? normalizeApprovalKind(data.kind) : undefined,
+    plan: data.plan != null ? sanitizeChatPlanProposal(data.plan) : undefined,
     expires_at: normalizeOptionalIsoLike(data.expires_at),
     decided_at: normalizeOptionalIsoLike(data.decided_at),
     decided_by: data.decided_by != null ? (clipApprovalText(data.decided_by, MAX_APPROVAL_ACTOR_CHARS) || undefined) : undefined,
@@ -283,6 +331,7 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     const sanitized = deps.stripUndefined({
       title: data.title?.trim() || 'Nova conversa',
       effort: (data.effort ?? DEFAULT_CHAT_EFFORT) as ChatEffortLevel,
+      agent_mode: isChatAgentMode(data.agent_mode) ? data.agent_mode : undefined,
       sidecar_root_path: data.sidecar_root_path,
       last_preview: data.last_preview ?? '',
       created_at: now,
@@ -326,6 +375,7 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     const created = deps.stripUndefined({
       title: resolveConversationTitleForRepair(data),
       effort: data.effort ?? DEFAULT_CHAT_EFFORT,
+      agent_mode: isChatAgentMode(data.agent_mode) ? data.agent_mode : undefined,
       sidecar_root_path: data.sidecar_root_path,
       last_preview: data.last_preview ?? '',
       created_at: now,
@@ -353,6 +403,17 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     await deps.withFirestoreRetry(
       () => updateDoc(ref, { effort, updated_at: new Date().toISOString() }),
       'updateChatConversationEffort.update',
+    )
+  }
+
+  async function updateChatConversationAgentMode(uid: string, conversationId: string, agentMode: ChatAgentMode): Promise<void> {
+    const db = deps.ensureFirestore()
+    const effectiveUid = await deps.resolveEffectiveUid(uid, 'updateChatConversationAgentMode')
+    const ref = chatConversationDoc(db, effectiveUid, conversationId)
+    const mode = isChatAgentMode(agentMode) ? agentMode : 'ask'
+    await deps.withFirestoreRetry(
+      () => updateDoc(ref, { agent_mode: mode, updated_at: new Date().toISOString() }),
+      'updateChatConversationAgentMode.update',
     )
   }
 
@@ -829,6 +890,7 @@ export function createChatRepository(deps: ChatRepositoryDependencies) {
     ensureChatConversation,
     renameChatConversation,
     updateChatConversationEffort,
+    updateChatConversationAgentMode,
     updateChatConversationPreview,
     setChatConversationPinned,
     deleteChatConversation,

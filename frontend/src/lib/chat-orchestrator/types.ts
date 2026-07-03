@@ -8,10 +8,12 @@
 
 import type {
   ChatEffortLevel,
+  ChatAgentMode,
   ChatAgentWorkPackage,
   ChatApprovalRequestData,
   ChatContextSourceRef,
   ChatPendingQuestionData,
+  ChatPlanProposalData,
   ChatSidecarApprovalPolicy,
   ChatSidecarAuditEntryData,
   ChatTrailEvent,
@@ -36,7 +38,7 @@ export type ChatSidecarAuditEntryInput = Omit<
 import type { UsageExecutionRecord, UsageFunctionKey } from '../cost-analytics'
 
 /** Re-export for consumers so they only need a single import path. */
-export type { ChatEffortLevel, ChatTrailEvent, ChatTurnStatus }
+export type { ChatEffortLevel, ChatAgentMode, ChatTrailEvent, ChatTurnStatus }
 
 /**
  * Orchestration profile — lets a single engine power multiple chat pipelines
@@ -112,6 +114,13 @@ export interface SkillContext {
   turnId: string
   userInput: string
   effort: ChatEffortLevel
+  /**
+   * Per-conversation execution mode. Governs how side-effectful (write) skills
+   * behave: `auto` runs them directly, `ask` gates each behind an approval,
+   * `plan` intercepts and returns a structured plan proposal. Optional so
+   * existing test fixtures keep compiling; sites default to `ask`.
+   */
+  agentMode?: ChatAgentMode
   budget: BudgetTracker
   signal: AbortSignal
   emit: (event: ChatTrailEvent) => void
@@ -171,6 +180,8 @@ export interface SkillResult<Output = unknown> {
     approval_id?: string
     resume_tool?: string
     resume_args?: Record<string, unknown>
+    /** Structured plan proposal, set when the pause is a plan card (mode `plan`). */
+    plan?: ChatPlanProposalData
   }
   output?: Output
 }
@@ -218,6 +229,8 @@ export interface RunChatTurnInput {
   conversationId: string
   turnId: string
   effort: ChatEffortLevel
+  /** Per-conversation execution mode (auto / ask / plan). Defaults to `ask`. */
+  agentMode?: ChatAgentMode
   history: Array<Pick<OrchestratorMessage, 'role' | 'content'>>
   user_input: string
   models: Record<string, string>

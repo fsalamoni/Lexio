@@ -233,6 +233,22 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     devToggleable: true,
   },
   {
+    key: 'FF_CHAT_AGENT_MODES',
+    label: 'Chat: Modos de execução do agente',
+    description: 'Habilita o seletor de modo por conversa (automático / sempre perguntar / planejar). Em "planejar", o agente estuda o pedido e entrega um plano estruturado (passos, arquivos, comandos) para aprovar, rejeitar ou revisar antes de executar.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_AGENT_MODES',
+    devToggleable: true,
+  },
+  {
+    key: 'FF_DESIGN_STUDIO',
+    label: 'Design Studio',
+    description: 'Habilita o Design Studio: gera slides, sites, apps (web/mobile), wireframes, documentos e animações a partir de um briefing, com temas, amostra ao vivo, edição manual, templates (importar/criar/exportar), exportação em HTML, JSON e Markdown e aplicação em repositórios conectados (via conector GitHub, em nova branch com pull request opcional).',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_DESIGN_STUDIO',
+    devToggleable: true,
+  },
+  {
     key: 'FF_CHAT_ENGINE_PLUS',
     label: 'Chat: Motor aprimorado',
     description: 'Crítico ciente de domínio e multi-eixo, teto de custo em USD por esforço, cache de prompt do sistema e memória rolante entre turnos.',
