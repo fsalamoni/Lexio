@@ -49,4 +49,35 @@ describe('DesignStudio', () => {
     expect(frame.getAttribute('srcdoc')).toContain('<!doctype html>')
     expect((screen.getByRole('button', { name: /Exportar HTML/ }) as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('exposes theme selection, template save and multi-format export once a design exists', () => {
+    isEnabledMock.mockReturnValue(true)
+    window.localStorage.clear()
+    render(<DesignStudio />)
+
+    // Theme picker and starter templates are always present.
+    expect(screen.getByLabelText('Tema do design')).toBeDefined()
+    expect(screen.getByText('Landing SaaS')).toBeDefined()
+
+    // Export + save are gated until a design is generated.
+    expect((screen.getByRole('button', { name: /Exportar template/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Salvar' }) as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.change(screen.getByLabelText('Briefing do design'), {
+      target: { value: 'Landing page para escritório trabalhista' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar design' }))
+
+    // Manual editing surface appears with an editable title.
+    const title = screen.getByLabelText('Título do design') as HTMLInputElement
+    expect(title.value).toBe('Landing page para escritório trabalhista')
+
+    // Export + Markdown are now enabled.
+    expect((screen.getByRole('button', { name: /Exportar Markdown/ }) as HTMLButtonElement).disabled).toBe(false)
+
+    // Saving a template persists it and shows it in the gallery.
+    fireEvent.change(screen.getByLabelText('Nome do template'), { target: { value: 'Meu modelo' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(screen.getByText('Meu modelo')).toBeDefined()
+  })
 })

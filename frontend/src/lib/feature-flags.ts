@@ -243,7 +243,7 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
   {
     key: 'FF_DESIGN_STUDIO',
     label: 'Design Studio',
-    description: 'Habilita o Design Studio: gera slides, sites, apps (web/mobile), wireframes, documentos e animações a partir de um briefing, com amostra ao vivo e exportação. Fases seguintes adicionam agente de IA, importação/exportação de templates, clonagem de designs por URL e aplicação em repositórios conectados.',
+    description: 'Habilita o Design Studio: gera slides, sites, apps (web/mobile), wireframes, documentos e animações a partir de um briefing, com temas, amostra ao vivo, edição manual, templates (importar/criar/exportar) e exportação em HTML, JSON e Markdown. Fases seguintes adicionam agente de IA, clonagem de designs por URL e aplicação em repositórios conectados.',
     defaultEnabled: false,
     envVar: 'VITE_FF_DESIGN_STUDIO',
     devToggleable: true,
