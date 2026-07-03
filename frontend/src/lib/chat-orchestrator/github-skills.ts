@@ -11,11 +11,19 @@ import { isEnabled } from '../feature-flags'
 import { loadGithubConnectorConfig } from './github-config'
 import {
   githubAddIssueComment,
+  githubCommitTree,
+  githubCreateBranch,
   githubCreateIssue,
   githubCreatePullRequest,
+  githubDeleteFile,
+  githubGetCombinedStatus,
   githubGetFile,
+  githubGetFileSha,
+  githubListPullRequestFiles,
   githubListRepos,
+  githubPutFile,
 } from './github-client'
+import type { GithubCommitFile } from './github-client'
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -51,6 +59,16 @@ function resolveOwnerRepo(args: { owner?: string; repo?: string }, defaults: { d
   const repo = String(args.repo ?? '').trim() || defaults.defaultRepo || ''
   if (!owner || !repo) return null
   return { owner, repo }
+}
+
+/** Branches we never allow direct writes to — mutations must go through a PR. */
+const PROTECTED_BRANCHES = new Set(['main', 'master'])
+
+/** Max files a single multi-file commit may touch (fail-safe, plan §Prevenção). */
+const MAX_COMMIT_FILES = 50
+
+function isProtectedBranch(branch: string): boolean {
+  return PROTECTED_BRANCHES.has(branch.trim().toLowerCase())
 }
 
 /** Inline approval prompt for a GitHub write action (mirrors the PC gate). */
@@ -236,8 +254,240 @@ const githubCommentSkill: Skill<GithubCommentArgs> = {
   },
 }
 
+// ── Write skills: repository contents (gated) ─────────────────────────────────
+
+interface GithubWriteFileArgs { owner?: string; repo?: string; path?: string; content?: string; message?: string; branch?: string; approved?: boolean; approval_id?: string }
+const githubWriteFileSkill: Skill<GithubWriteFileArgs> = {
+  name: 'github_write_file',
+  description: 'Cria ou atualiza um arquivo em um repositório GitHub (contents API). Nunca escreve direto em main/master. Pede aprovação quando o portão de ações está ativo.',
+  argsHint: { owner: 'Dono/org', repo: 'Repositório', path: 'Caminho do arquivo', content: 'Conteúdo completo do arquivo', message: 'Mensagem de commit', branch: 'Branch alvo (não pode ser main/master)' },
+  async run(args, ctx): Promise<SkillResult> {
+    const { token, defaultOwner, defaultRepo } = await resolveToken(ctx)
+    if (!token) return { tool_message: NO_TOKEN_MESSAGE }
+    const target = resolveOwnerRepo(args, { defaultOwner, defaultRepo })
+    if (!target) return { tool_message: 'Informe "owner" e "repo" (ou configure padrões no conector).' }
+    const path = String(args.path ?? '').trim()
+    if (!path) return { tool_message: 'Erro: "path" é obrigatório.' }
+    if (typeof args.content !== 'string') return { tool_message: 'Erro: "content" é obrigatório.' }
+    const branch = String(args.branch ?? '').trim()
+    if (!branch) return { tool_message: 'Erro: "branch" é obrigatório (nunca escrevemos direto em main/master).' }
+    if (isProtectedBranch(branch)) return { tool_message: `Erro: escrita direta em "${branch}" bloqueada. Crie um branch dedicado e abra um PR.` }
+    const message = String(args.message ?? '').trim() || `Atualiza ${path}`
+    if (approvalGateActive() && args.approved !== true) {
+      return requestGithubApproval(ctx, {
+        title: `Gravar arquivo em ${target.owner}/${target.repo}`,
+        summary: `${path} em ${branch} (${args.content.length} caracteres).`,
+        resumeTool: 'github_write_file',
+        resumeArgs: { owner: target.owner, repo: target.repo, path, content: args.content, message, branch },
+      })
+    }
+    try {
+      const sha = await githubGetFileSha(token, target.owner, target.repo, path, branch, ctx.signal)
+      const res = await githubPutFile(token, target.owner, target.repo, { path, content: args.content, message, branch, sha }, ctx.signal)
+      emitConnector(ctx, `GitHub: ${sha ? 'atualizou' : 'criou'} ${path} em ${branch}`)
+      await auditSafe(ctx, { operation: 'github_write_file', actor: 'connector', status: 'executed', approval_id: args.approval_id, resource_path: `${target.owner}/${target.repo}/${path}@${branch}`, message: res.commit.sha })
+      return { tool_message: `✅ ${sha ? 'Arquivo atualizado' : 'Arquivo criado'}: ${path} (${res.commit.sha.slice(0, 7)})${res.commit.html_url ? ` — ${res.commit.html_url}` : ''}` }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      await auditSafe(ctx, { operation: 'github_write_file', actor: 'connector', status: 'failed', approval_id: args.approval_id, resource_path: `${target.owner}/${target.repo}/${path}@${branch}`, message: (err as Error).message })
+      return { tool_message: `Falha ao gravar ${path}: ${(err as Error).message}` }
+    }
+  },
+}
+
+interface GithubDeleteFileArgs { owner?: string; repo?: string; path?: string; message?: string; branch?: string; approved?: boolean; approval_id?: string }
+const githubDeleteFileSkill: Skill<GithubDeleteFileArgs> = {
+  name: 'github_delete_file',
+  description: 'Remove um arquivo de um repositório GitHub. Nunca apaga direto em main/master. Pede aprovação quando o portão de ações está ativo.',
+  argsHint: { owner: 'Dono/org', repo: 'Repositório', path: 'Caminho do arquivo', message: 'Mensagem de commit', branch: 'Branch alvo (não pode ser main/master)' },
+  async run(args, ctx): Promise<SkillResult> {
+    const { token, defaultOwner, defaultRepo } = await resolveToken(ctx)
+    if (!token) return { tool_message: NO_TOKEN_MESSAGE }
+    const target = resolveOwnerRepo(args, { defaultOwner, defaultRepo })
+    if (!target) return { tool_message: 'Informe "owner" e "repo" (ou configure padrões no conector).' }
+    const path = String(args.path ?? '').trim()
+    if (!path) return { tool_message: 'Erro: "path" é obrigatório.' }
+    const branch = String(args.branch ?? '').trim()
+    if (!branch) return { tool_message: 'Erro: "branch" é obrigatório (nunca apagamos direto em main/master).' }
+    if (isProtectedBranch(branch)) return { tool_message: `Erro: remoção direta em "${branch}" bloqueada. Crie um branch dedicado e abra um PR.` }
+    const message = String(args.message ?? '').trim() || `Remove ${path}`
+    if (approvalGateActive() && args.approved !== true) {
+      return requestGithubApproval(ctx, {
+        title: `Remover arquivo em ${target.owner}/${target.repo}`,
+        summary: `${path} em ${branch}.`,
+        resumeTool: 'github_delete_file',
+        resumeArgs: { owner: target.owner, repo: target.repo, path, message, branch },
+      })
+    }
+    try {
+      const sha = await githubGetFileSha(token, target.owner, target.repo, path, branch, ctx.signal)
+      if (!sha) return { tool_message: `Erro: "${path}" não existe em ${branch}.` }
+      const res = await githubDeleteFile(token, target.owner, target.repo, { path, message, sha, branch }, ctx.signal)
+      emitConnector(ctx, `GitHub: removeu ${path} em ${branch}`)
+      await auditSafe(ctx, { operation: 'github_delete_file', actor: 'connector', status: 'executed', approval_id: args.approval_id, resource_path: `${target.owner}/${target.repo}/${path}@${branch}`, message: res.commit.sha })
+      return { tool_message: `✅ Arquivo removido: ${path} (${res.commit.sha.slice(0, 7)})` }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      await auditSafe(ctx, { operation: 'github_delete_file', actor: 'connector', status: 'failed', approval_id: args.approval_id, resource_path: `${target.owner}/${target.repo}/${path}@${branch}`, message: (err as Error).message })
+      return { tool_message: `Falha ao remover ${path}: ${(err as Error).message}` }
+    }
+  },
+}
+
+interface GithubCreateBranchArgs { owner?: string; repo?: string; branch?: string; from?: string; approved?: boolean; approval_id?: string }
+const githubCreateBranchSkill: Skill<GithubCreateBranchArgs> = {
+  name: 'github_create_branch',
+  description: 'Cria um novo branch a partir de outro (base) em um repositório GitHub. Pede aprovação quando o portão de ações está ativo.',
+  argsHint: { owner: 'Dono/org', repo: 'Repositório', branch: 'Nome do novo branch', from: 'Branch base (ex.: main)' },
+  async run(args, ctx): Promise<SkillResult> {
+    const { token, defaultOwner, defaultRepo } = await resolveToken(ctx)
+    if (!token) return { tool_message: NO_TOKEN_MESSAGE }
+    const target = resolveOwnerRepo(args, { defaultOwner, defaultRepo })
+    if (!target) return { tool_message: 'Informe "owner" e "repo" (ou configure padrões no conector).' }
+    const branch = String(args.branch ?? '').trim()
+    const from = String(args.from ?? '').trim()
+    if (!branch || !from) return { tool_message: 'Erro: "branch" (novo) e "from" (base) são obrigatórios.' }
+    if (isProtectedBranch(branch)) return { tool_message: `Erro: "${branch}" é um branch protegido.` }
+    if (approvalGateActive() && args.approved !== true) {
+      return requestGithubApproval(ctx, {
+        title: `Criar branch em ${target.owner}/${target.repo}`,
+        summary: `"${branch}" a partir de "${from}".`,
+        resumeTool: 'github_create_branch',
+        resumeArgs: { owner: target.owner, repo: target.repo, branch, from },
+      })
+    }
+    try {
+      const res = await githubCreateBranch(token, target.owner, target.repo, { newBranch: branch, fromBranch: from }, ctx.signal)
+      emitConnector(ctx, `GitHub: branch ${branch} criado`)
+      await auditSafe(ctx, { operation: 'github_create_branch', actor: 'connector', status: 'executed', approval_id: args.approval_id, resource_path: `${target.owner}/${target.repo}@${branch}`, message: res.sha })
+      return { tool_message: `✅ Branch criado: ${branch} (${res.sha.slice(0, 7)})` }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      await auditSafe(ctx, { operation: 'github_create_branch', actor: 'connector', status: 'failed', approval_id: args.approval_id, resource_path: `${target.owner}/${target.repo}@${branch}`, message: (err as Error).message })
+      return { tool_message: `Falha ao criar branch: ${(err as Error).message}` }
+    }
+  },
+}
+
+interface GithubCommitArgs { owner?: string; repo?: string; branch?: string; message?: string; files?: unknown; approved?: boolean; approval_id?: string }
+function parseCommitFiles(raw: unknown): GithubCommitFile[] | { error: string } {
+  if (!Array.isArray(raw)) return { error: '"files" deve ser uma lista de { path, content } ou { path, delete: true }.' }
+  const files: GithubCommitFile[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') return { error: 'Cada entrada de "files" deve ser um objeto.' }
+    const path = String((item as { path?: unknown }).path ?? '').trim()
+    if (!path) return { error: 'Cada entrada de "files" precisa de "path".' }
+    const del = (item as { delete?: unknown }).delete === true
+    const content = (item as { content?: unknown }).content
+    if (!del && typeof content !== 'string') return { error: `"${path}" precisa de "content" (ou delete: true).` }
+    files.push(del ? { path, delete: true } : { path, content: String(content) })
+  }
+  if (files.length === 0) return { error: '"files" está vazio.' }
+  if (files.length > MAX_COMMIT_FILES) return { error: `Limite de ${MAX_COMMIT_FILES} arquivos por commit excedido (${files.length}).` }
+  return files
+}
+const githubCommitSkill: Skill<GithubCommitArgs> = {
+  name: 'github_commit',
+  description: 'Faz um único commit com múltiplas alterações de arquivos (criar/atualizar/remover) em um branch. Nunca commita direto em main/master. Pede aprovação quando o portão de ações está ativo.',
+  argsHint: { owner: 'Dono/org', repo: 'Repositório', branch: 'Branch alvo (não pode ser main/master)', message: 'Mensagem de commit', files: 'Lista [{ path, content } | { path, delete: true }]' },
+  async run(args, ctx): Promise<SkillResult> {
+    const { token, defaultOwner, defaultRepo } = await resolveToken(ctx)
+    if (!token) return { tool_message: NO_TOKEN_MESSAGE }
+    const target = resolveOwnerRepo(args, { defaultOwner, defaultRepo })
+    if (!target) return { tool_message: 'Informe "owner" e "repo" (ou configure padrões no conector).' }
+    const branch = String(args.branch ?? '').trim()
+    if (!branch) return { tool_message: 'Erro: "branch" é obrigatório (nunca commitamos direto em main/master).' }
+    if (isProtectedBranch(branch)) return { tool_message: `Erro: commit direto em "${branch}" bloqueado. Crie um branch dedicado e abra um PR.` }
+    const message = String(args.message ?? '').trim()
+    if (!message) return { tool_message: 'Erro: "message" é obrigatório.' }
+    const parsed = parseCommitFiles(args.files)
+    if (!Array.isArray(parsed)) return { tool_message: `Erro: ${parsed.error}` }
+    if (approvalGateActive() && args.approved !== true) {
+      const changed = parsed.map(f => `${f.delete ? '− ' : '± '}${f.path}`).join('\n')
+      return requestGithubApproval(ctx, {
+        title: `Commit em ${target.owner}/${target.repo}@${branch}`,
+        summary: `${message}\n\n${changed}`,
+        resumeTool: 'github_commit',
+        resumeArgs: { owner: target.owner, repo: target.repo, branch, message, files: parsed },
+      })
+    }
+    try {
+      const res = await githubCommitTree(token, target.owner, target.repo, { branch, message, files: parsed }, ctx.signal)
+      emitConnector(ctx, `GitHub: commit ${res.sha.slice(0, 7)} em ${branch} (${parsed.length} arquivo(s))`)
+      await auditSafe(ctx, { operation: 'github_commit', actor: 'connector', status: 'executed', approval_id: args.approval_id, resource_path: `${target.owner}/${target.repo}@${branch}`, message: res.sha })
+      return { tool_message: `✅ Commit criado: ${res.sha.slice(0, 7)} em ${branch} (${parsed.length} arquivo(s))${res.html_url ? ` — ${res.html_url}` : ''}` }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      await auditSafe(ctx, { operation: 'github_commit', actor: 'connector', status: 'failed', approval_id: args.approval_id, resource_path: `${target.owner}/${target.repo}@${branch}`, message: (err as Error).message })
+      return { tool_message: `Falha ao commitar: ${(err as Error).message}` }
+    }
+  },
+}
+
+// ── Read skills: status / PR files (freely) ───────────────────────────────────
+
+interface GithubGetStatusArgs { owner?: string; repo?: string; ref?: string }
+const githubGetStatusSkill: Skill<GithubGetStatusArgs> = {
+  name: 'github_get_status',
+  description: 'Consulta o status combinado (checks de CI) de um branch ou commit. Somente leitura.',
+  argsHint: { owner: 'Dono/org', repo: 'Repositório', ref: 'Branch, tag ou SHA' },
+  async run(args, ctx): Promise<SkillResult> {
+    const { token, defaultOwner, defaultRepo } = await resolveToken(ctx)
+    if (!token) return { tool_message: NO_TOKEN_MESSAGE }
+    const target = resolveOwnerRepo(args, { defaultOwner, defaultRepo })
+    if (!target) return { tool_message: 'Informe "owner" e "repo" (ou configure padrões no conector).' }
+    const ref = String(args.ref ?? '').trim()
+    if (!ref) return { tool_message: 'Erro: "ref" é obrigatório.' }
+    try {
+      const status = await githubGetCombinedStatus(token, target.owner, target.repo, ref, ctx.signal)
+      emitConnector(ctx, `GitHub: status ${status.state} para ${ref}`)
+      const lines = status.statuses.map(s => `- ${s.context}: ${s.state}`).join('\n')
+      return { tool_message: `🔎 Status de ${ref}: ${status.state} (${status.total_count} check(s))${lines ? `\n${lines}` : ''}` }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      return { tool_message: `Falha ao obter status: ${(err as Error).message}` }
+    }
+  },
+}
+
+interface GithubListPrFilesArgs { owner?: string; repo?: string; pull_number?: number }
+const githubListPrFilesSkill: Skill<GithubListPrFilesArgs> = {
+  name: 'github_list_pr_files',
+  description: 'Lista os arquivos alterados em um pull request. Somente leitura.',
+  argsHint: { owner: 'Dono/org', repo: 'Repositório', pull_number: 'Número do PR' },
+  async run(args, ctx): Promise<SkillResult> {
+    const { token, defaultOwner, defaultRepo } = await resolveToken(ctx)
+    if (!token) return { tool_message: NO_TOKEN_MESSAGE }
+    const target = resolveOwnerRepo(args, { defaultOwner, defaultRepo })
+    if (!target) return { tool_message: 'Informe "owner" e "repo" (ou configure padrões no conector).' }
+    const pullNumber = Number(args.pull_number)
+    if (!Number.isFinite(pullNumber) || pullNumber <= 0) return { tool_message: 'Erro: "pull_number" inválido.' }
+    try {
+      const files = await githubListPullRequestFiles(token, target.owner, target.repo, pullNumber, ctx.signal)
+      emitConnector(ctx, `GitHub: PR #${pullNumber} com ${files.length} arquivo(s)`)
+      const lines = files.slice(0, 100).map(f => `- ${f.filename} (${f.status}, +${f.additions}/−${f.deletions})`).join('\n')
+      return { tool_message: `📝 Arquivos do PR #${pullNumber}:\n${lines || '(nenhum)'}` }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      return { tool_message: `Falha ao listar arquivos do PR: ${(err as Error).message}` }
+    }
+  },
+}
+
 /** GitHub connector skills, exposed only when `FF_CHAT_GITHUB` is on. */
 export function buildGithubSkills(): Skill[] {
   if (!isEnabled('FF_CHAT_GITHUB')) return []
-  return [githubListReposSkill, githubReadFileSkill, githubCreateIssueSkill, githubOpenPrSkill, githubCommentSkill]
+  return [
+    githubListReposSkill,
+    githubReadFileSkill,
+    githubCreateIssueSkill,
+    githubOpenPrSkill,
+    githubCommentSkill,
+    githubWriteFileSkill,
+    githubDeleteFileSkill,
+    githubCreateBranchSkill,
+    githubCommitSkill,
+    githubGetStatusSkill,
+    githubListPrFilesSkill,
+  ]
 }
