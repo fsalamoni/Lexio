@@ -5886,7 +5886,7 @@ Instruções:
 
               {activeSection === 'chat' && (
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-                  <section className="v2-panel flex min-h-[520px] max-h-[calc(100vh-5rem)] flex-col overflow-hidden">
+                  <section className="v2-panel flex min-h-[calc(100vh-8rem)] max-h-[calc(100vh-3rem)] flex-col overflow-hidden">
                     <div className="border-b border-[var(--v2-line-soft)] px-5 py-4 lg:px-6">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
