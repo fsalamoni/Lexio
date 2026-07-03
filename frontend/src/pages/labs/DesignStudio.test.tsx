@@ -80,4 +80,12 @@ describe('DesignStudio', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     expect(screen.getByText('Meu modelo')).toBeDefined()
   })
+
+  it('renders the repository apply panel and guides when no token is configured', async () => {
+    isEnabledMock.mockReturnValue(true)
+    render(<DesignStudio />)
+    expect(screen.getByRole('heading', { name: 'Aplicar em repositório' })).toBeDefined()
+    // With the connector flag on but no PAT (no Firebase in tests), it guides to settings.
+    expect(await screen.findByText(/Nenhum token configurado/)).toBeDefined()
+  })
 })
