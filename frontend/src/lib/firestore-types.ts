@@ -145,6 +145,7 @@ export interface UserSettingsData {
   presentation_v2_pipeline_models?: Record<string, string>
   document_v3_models?: Record<string, string>
   document_v4_models?: Record<string, string>
+  design_studio_models?: Record<string, string>
   /**
    * Per-user tool catalog for the Document v4 single-agent + tools pipeline.
    * Keyed by tool name; missing tools fall back to the catalog default.

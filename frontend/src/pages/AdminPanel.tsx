@@ -38,6 +38,7 @@ import AudioPipelineConfigCard from '../components/AudioPipelineConfigCard'
 import PresentationPipelineConfigCard from '../components/PresentationPipelineConfigCard'
 import PresentationV2PipelineConfigCard from '../components/PresentationV2PipelineConfigCard'
 import ChatOrchestratorConfigCard from '../components/ChatOrchestratorConfigCard'
+import DesignStudioConfigCard from '../components/DesignStudioConfigCard'
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
 import DocumentV4PipelineConfigCard from '../components/admin/DocumentV4PipelineConfigCard'
 import DocumentV4ToolsConfigCard from '../components/admin/DocumentV4ToolsConfigCard'
@@ -1392,6 +1393,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <ChatOrchestratorConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Design Studio Config — orchestrator-model agents, shown only when the Design Studio flag is active. */}
+      {IS_FIREBASE && isFeatureEnabled('FF_DESIGN_STUDIO') && (
+        <AdminCollapsibleSection
+          id="section_design_studio_config"
+          title="Design Studio"
+          icon={Palette}
+          iconColor="text-purple-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <DesignStudioConfigCard />
         </AdminCollapsibleSection>
       )}
 

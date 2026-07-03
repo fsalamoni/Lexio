@@ -45,6 +45,7 @@ const USER_SETTINGS_MODEL_KEYS = [
   'document_v4_models',
   'chat_orchestrator_models',
   'chat_orchestrator_v2_models',
+  'design_studio_models',
 ] as const satisfies ReadonlyArray<keyof UserSettingsData>
 
 export function createSettingsRepository(deps: SettingsRepositoryDependencies) {

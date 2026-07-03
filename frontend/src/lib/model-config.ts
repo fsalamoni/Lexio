@@ -23,6 +23,7 @@ import {
   CHAT_V2_MEDIA_AGENT_KEYS,
   CONTEXT_DETAIL_AGENT_DEFS,
   DEFAULT_VIDEO_TTS_VOICE,
+  DESIGN_STUDIO_AGENT_DEFS,
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
   DOCUMENT_V4_PIPELINE_AGENT_DEFS,
   NOTEBOOK_ACERVO_AGENT_DEFS,
@@ -45,6 +46,7 @@ export {
   CHAT_V2_MEDIA_AGENT_KEYS,
   CONTEXT_DETAIL_AGENT_DEFS,
   DEFAULT_VIDEO_TTS_VOICE,
+  DESIGN_STUDIO_AGENT_DEFS,
   DOCUMENT_V3_PIPELINE_AGENT_DEFS,
   DOCUMENT_V4_PIPELINE_AGENT_DEFS,
   NOTEBOOK_ACERVO_AGENT_DEFS,
@@ -788,6 +790,7 @@ type ScopedModelSettingsKey =
   | 'document_v4_models'
   | 'chat_orchestrator_models'
   | 'chat_orchestrator_v2_models'
+  | 'design_studio_models'
 
 function resolveScopedUid(uid?: string): string | undefined {
   return uid ?? getCurrentUserId() ?? undefined
@@ -1379,6 +1382,40 @@ export async function resetChatOrchestratorV2Models(uid?: string): Promise<void>
   await resetScopedModelMap('chat_orchestrator_v2_models', uid)
 }
 
+
+/** Map from Design Studio agent key → model ID */
+export type DesignStudioModelMap = Record<string, string>
+
+/** Default model map for the Design Studio pipeline. */
+export function getDefaultDesignStudioModelMap(): DesignStudioModelMap {
+  const map: DesignStudioModelMap = {}
+  for (const def of DESIGN_STUDIO_AGENT_DEFS) {
+    map[def.key] = def.defaultModel
+  }
+  return map
+}
+
+/**
+ * Load Design Studio model configuration.
+ * Returns saved overrides merged with defaults.
+ */
+export async function loadDesignStudioModels(uid?: string): Promise<DesignStudioModelMap> {
+  return loadScopedModelMap('design_studio_models', DESIGN_STUDIO_AGENT_DEFS, getDefaultDesignStudioModelMap(), uid)
+}
+
+/**
+ * Save Design Studio model configuration to Firestore.
+ * Only stores non-default values to keep data minimal.
+ */
+export async function saveDesignStudioModels(models: DesignStudioModelMap, uid?: string): Promise<void> {
+  await saveScopedModelMap('design_studio_models', DESIGN_STUDIO_AGENT_DEFS, getDefaultDesignStudioModelMap(), models, uid)
+}
+
+/** Reset Design Studio models to defaults. */
+export async function resetDesignStudioModels(uid?: string): Promise<void> {
+  await resetScopedModelMap('design_studio_models', uid)
+}
+
 export const AGENT_CONFIG_DEFS: Record<ScopedModelSettingsKey, AgentModelDef[]> = {
   agent_models: PIPELINE_AGENT_DEFS,
   thesis_analyst_models: THESIS_ANALYST_AGENT_DEFS,
@@ -1395,6 +1432,7 @@ export const AGENT_CONFIG_DEFS: Record<ScopedModelSettingsKey, AgentModelDef[]> 
   document_v4_models: DOCUMENT_V4_PIPELINE_AGENT_DEFS,
   chat_orchestrator_models: CHAT_ORCHESTRATOR_AGENT_DEFS,
   chat_orchestrator_v2_models: CHAT_ORCHESTRATOR_V2_MODEL_DEFS,
+  design_studio_models: DESIGN_STUDIO_AGENT_DEFS,
 }
 
 export async function validateScopedAgentModels(
