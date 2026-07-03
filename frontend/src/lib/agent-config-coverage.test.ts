@@ -46,6 +46,7 @@ describe('user-scoped agent configuration coverage', () => {
       'chat_orchestrator_models',
       'chat_orchestrator_v2_models',
       'context_detail_models',
+      'design_studio_models',
       'document_v3_models',
       'document_v4_models',
       'notebook_acervo_models',
@@ -187,6 +188,31 @@ describe('user-scoped agent configuration coverage', () => {
       'v4_agent',
       'v4_critic',
     ])
+  })
+
+  it('registers the Design Studio orchestrator agent group with capability-scoped image generation', () => {
+    expect(AGENT_CONFIG_DEFS.design_studio_models.map(agent => agent.key)).toEqual([
+      'design_studio_orchestrator',
+      'design_studio_brief_analyst',
+      'design_studio_clarifier',
+      'design_studio_ux_architect',
+      'design_studio_content_writer',
+      'design_studio_visual_designer',
+      'design_studio_image_generator',
+      'design_studio_motion_designer',
+      'design_studio_code_generator',
+      'design_studio_reviewer',
+      'design_studio_packager',
+    ])
+
+    const orchestrator = AGENT_CONFIG_DEFS.design_studio_models.find(agent => agent.key === 'design_studio_orchestrator')
+    expect(orchestrator?.agentCategory).toBe('reasoning')
+
+    // Only capability-compatible catalog models can be enabled per agent: text
+    // for the reasoning/writing agents and image for the real image generator.
+    const imageGenerator = AGENT_CONFIG_DEFS.design_studio_models.find(agent => agent.key === 'design_studio_image_generator')
+    expect(imageGenerator?.requiredCapability).toBe('image')
+    expect(imageGenerator?.defaultModel).toBe('google/gemini-2.5-flash-image')
   })
 
   it('restricts the real video clip generator to models with the video capability', () => {

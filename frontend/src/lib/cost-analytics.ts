@@ -295,6 +295,18 @@ const PHASE_LABELS: Record<string, string> = {
   presentation_v2_video_generator: 'Apresentação v2: Gerador de Clipes',
   presentation_v2_reviewer: 'Apresentação v2: Revisor Multimodal',
   presentation_v2_packager: 'Apresentação v2: Empacotador',
+  // ── Design Studio phases ──
+  design_studio_orchestrator: 'Design Studio: Orquestrador',
+  design_studio_brief_analyst: 'Design Studio: Analista de Briefing',
+  design_studio_clarifier: 'Design Studio: Clarificador',
+  design_studio_ux_architect: 'Design Studio: Arquiteto de UX',
+  design_studio_content_writer: 'Design Studio: Redator de Conteúdo',
+  design_studio_visual_designer: 'Design Studio: Diretor Visual',
+  design_studio_image_generator: 'Design Studio: Gerador de Imagens',
+  design_studio_motion_designer: 'Design Studio: Designer de Movimento',
+  design_studio_code_generator: 'Design Studio: Gerador de Código',
+  design_studio_reviewer: 'Design Studio: Revisor de Design',
+  design_studio_packager: 'Design Studio: Empacotador',
   // ── Chat orchestrator phases ──
   chat_orchestrator: 'Chat: Orquestrador',
   // ── Chat orchestrator v2 phases (lean group) ──

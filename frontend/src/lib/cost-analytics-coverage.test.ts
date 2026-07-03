@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { buildCostBreakdown, createUsageExecutionRecord, extractChatTurnExecutions, getPhaseLabel } from './cost-analytics'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from './pipelines/agent-definitions/chat-orchestrator'
+import { DESIGN_STUDIO_AGENT_DEFS } from './pipelines/agent-definitions/design-studio'
 
 describe('cost analytics coverage', () => {
   it('formats dynamic studio phases with human-friendly labels', () => {
@@ -150,6 +151,28 @@ describe('cost analytics coverage', () => {
       }
     }
     expect(unmapped).toEqual([])
+  })
+
+  it('maps every Design Studio agent to a human-friendly "Design Studio:" phase label', () => {
+    const unmapped: string[] = []
+    for (const def of DESIGN_STUDIO_AGENT_DEFS) {
+      const label = getPhaseLabel(def.key)
+      if (label === def.key.replace(/_/g, ' ') || !label.startsWith('Design Studio:')) {
+        unmapped.push(def.key)
+      }
+    }
+    expect(unmapped).toEqual([])
+  })
+
+  it('aggregates Design Studio executions into the design_studio function breakdown', () => {
+    const breakdown = buildCostBreakdown([
+      createUsageExecutionRecord({ source_type: 'design_studio', source_id: 'ds-1', phase: 'design_studio_orchestrator', agent_name: 'Orquestrador', model: 'anthropic/claude-sonnet-4', cost_usd: 0.05 }),
+      createUsageExecutionRecord({ source_type: 'design_studio', source_id: 'ds-1', phase: 'design_studio_image_generator', agent_name: 'Gerador de Imagens', model: 'google/gemini-2.5-flash-image', cost_usd: 0.02 }),
+    ])
+
+    expect(breakdown.by_function.find(item => item.key === 'design_studio')?.label).toBe('Design Studio')
+    expect(breakdown.by_phase.find(item => item.key === 'design_studio_orchestrator')?.label).toBe('Design Studio: Orquestrador')
+    expect(breakdown.by_phase.find(item => item.key === 'design_studio_image_generator')?.label).toBe('Design Studio: Gerador de Imagens')
   })
 
   it('flattens chat conversation turns into per-pipeline usage executions', () => {
