@@ -804,6 +804,11 @@ async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Pro
   }
 
   const profile = ctx.profile ?? DEFAULT_V1_PROFILE
+  // In plan mode the orchestrator turn produces a structured plan proposal
+  // (rather than executing), so attribute its cost to the planning function key.
+  const planning = ctx.agentMode === 'plan'
+  const functionKey = planning ? 'chat_agent_planning' : profile.functionKey
+  const functionLabel = planning ? 'Chat: Planejamento do agente' : profile.functionLabel
   const { raw, usage } = await llmCall({
     systemPrompt,
     history,
@@ -816,8 +821,8 @@ async function callOrchestratorAndParse(args: CallOrchestratorAndParseArgs): Pro
     perCallTokenCap,
     ...(typeof temperature === 'number' ? { temperature } : {}),
     agentLabel: profile.orchestratorLabel,
-    functionKey: profile.functionKey,
-    functionLabel: profile.functionLabel,
+    functionKey,
+    functionLabel,
     onToken,
   })
   if (usage) {

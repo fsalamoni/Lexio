@@ -161,6 +161,7 @@ import {
   ensureChatConversation,
   renameChatConversation,
   updateChatConversationEffort,
+  updateChatConversationAgentMode,
   updateChatConversationPreview,
   deleteChatConversation,
   listChatTurns,
@@ -1534,6 +1535,12 @@ describe('saveNotebookDocumentToDocuments', () => {
     expect(mockUpdateDoc).toHaveBeenLastCalledWith(
       { path: 'users/user-123/chat_conversations/conv-new' },
       expect.objectContaining({ effort: 'profundo', updated_at: expect.any(String) }),
+    )
+
+    await updateChatConversationAgentMode(uid, 'conv-new', 'plan')
+    expect(mockUpdateDoc).toHaveBeenLastCalledWith(
+      { path: 'users/user-123/chat_conversations/conv-new' },
+      expect.objectContaining({ agent_mode: 'plan', updated_at: expect.any(String) }),
     )
 
     mockGetDoc.mockResolvedValueOnce({
