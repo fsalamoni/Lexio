@@ -38,7 +38,7 @@ vi.mock('./components/v2/V2WorkspaceLayout', () => ({
 }))
 
 vi.mock('./lib/feature-flags', () => ({
-  FEATURE_FLAGS_UPDATED_EVENT: 'lexio:flags-updated',
+  FEATURE_FLAGS_UPDATED_EVENT: 'lexio:feature_flags_updated',
   clearRuntimeFeatureFlags: vi.fn(),
   isEnabled: vi.fn(() => false),
 }))
