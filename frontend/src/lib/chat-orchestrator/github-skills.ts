@@ -5,7 +5,7 @@
  * open_pr/comment) pause for user approval when `FF_CHAT_PC_APPROVALS` is on,
  * reusing the same awaiting_user/resume flow as the PC sidecar skills.
  */
-import type { ChatTrailEvent } from '../firestore-types'
+import type { ChatTrailEvent, ChatPlanProposalData, ChatPlanStep } from '../firestore-types'
 import type { ChatSidecarAuditEntryInput, Skill, SkillContext, SkillResult } from './types'
 import { isEnabled } from '../feature-flags'
 import { loadGithubConnectorConfig } from './github-config'
@@ -104,6 +104,137 @@ async function requestGithubApproval(
   }
 }
 
+/**
+ * Effective per-conversation execution mode for a write skill.
+ *  - `execute`: run the mutation directly (mode `auto`, or a resumed/approved call).
+ *  - `ask`: pause behind an approval card (mode `ask`).
+ *  - `plan`: return a structured plan proposal without executing (mode `plan`).
+ *
+ * When `ctx.agentMode` is absent (legacy callers / old fixtures) the behavior
+ * falls back to the `FF_CHAT_PC_APPROVALS` flag so existing flows are unchanged.
+ */
+type GithubWriteGate = 'execute' | 'ask' | 'plan'
+
+function resolveWriteGate(ctx: SkillContext, args: { approved?: boolean }): GithubWriteGate {
+  if (args.approved === true) return 'execute'
+  switch (ctx.agentMode) {
+    case 'auto':
+      return 'execute'
+    case 'plan':
+      return 'plan'
+    case 'ask':
+      return 'ask'
+    default:
+      // Legacy: no explicit mode → driven by the approval feature flag.
+      return approvalGateActive() ? 'ask' : 'execute'
+  }
+}
+
+/** Description of a proposed write operation, used to build the plan card. */
+interface GithubPlanIntent {
+  summary: string
+  steps: ChatPlanStep[]
+  affectedFiles?: string[]
+  commands?: string[]
+  targetRepo?: string
+}
+
+/**
+ * Plan-mode interception for a write skill: produces a structured plan proposal
+ * (persisted as a `kind: 'plan'` approval request) and pauses the turn with a
+ * plan card the user can approve / reject / revise. Nothing is executed.
+ */
+async function proposeGithubPlan(
+  ctx: SkillContext,
+  opts: { title: string; resumeTool: string; resumeArgs: Record<string, unknown>; intent: GithubPlanIntent; revisionNotes?: string; revisionCount?: number },
+): Promise<SkillResult> {
+  const revisionCount = opts.revisionCount ?? 0
+  const plan: ChatPlanProposalData = {
+    state: 'proposed',
+    summary: opts.intent.summary,
+    steps: opts.intent.steps,
+    ...(opts.intent.affectedFiles?.length ? { affected_files: opts.intent.affectedFiles } : {}),
+    ...(opts.intent.commands?.length ? { commands: opts.intent.commands } : {}),
+    ...(opts.intent.targetRepo ? { target_repo: opts.intent.targetRepo } : {}),
+    ...(opts.revisionNotes ? { revision_notes: opts.revisionNotes } : {}),
+    ...(revisionCount ? { revision_count: revisionCount } : {}),
+  }
+  let approvalId = `local-plan-${Date.now()}`
+  if (ctx.createApprovalRequest) {
+    try {
+      approvalId = await ctx.createApprovalRequest({
+        command_ids: [],
+        title: opts.title,
+        summary: opts.intent.summary,
+        risk_level: 'medium',
+        requested_permissions: ['network'],
+        kind: 'plan',
+        plan,
+      })
+    } catch {
+      // keep local id
+    }
+  }
+  ctx.emit({ type: 'plan_proposed', approval_id: approvalId, summary: opts.intent.summary, step_count: opts.intent.steps.length, revision_count: revisionCount, ts: nowIso() } as ChatTrailEvent)
+  await auditSafe(ctx, { operation: opts.resumeTool, actor: 'connector', status: 'proposed', approval_id: approvalId, message: `Plano: ${opts.title}` })
+  return {
+    tool_message: `Plano proposto (${approvalId}): ${opts.title}. Aguardando o usuário aprovar, rejeitar ou revisar.`,
+    awaiting_user: {
+      question: renderPlanQuestion(opts.title, plan),
+      options: ['aprovar', 'rejeitar', 'revisar'],
+      approval_id: approvalId,
+      resume_tool: opts.resumeTool,
+      // Base args (no `approved`): plan approval adds `approved: true`, revision
+      // re-enters plan mode with the accumulated notes.
+      resume_args: { ...opts.resumeArgs, approval_id: approvalId },
+      plan,
+    },
+  }
+}
+
+function renderPlanQuestion(title: string, plan: ChatPlanProposalData): string {
+  const lines: string[] = [`📋 ${title}`, '', plan.summary, '']
+  plan.steps.forEach((step, idx) => {
+    lines.push(`${idx + 1}. ${step.title}`)
+    if (step.detail) lines.push(`   ${step.detail}`)
+    if (step.files?.length) lines.push(`   Arquivos: ${step.files.join(', ')}`)
+    if (step.commands?.length) lines.push(`   Comandos: ${step.commands.join(' && ')}`)
+  })
+  if (plan.affected_files?.length) lines.push('', `Arquivos afetados: ${plan.affected_files.join(', ')}`)
+  lines.push('', 'Responda "aprovar", "rejeitar" ou "revisar".')
+  return lines.join('\n')
+}
+
+/**
+ * Central write gate shared by every GitHub mutation skill. Returns a paused
+ * `SkillResult` (approval or plan) when the mode requires user interaction, or
+ * `null` when the caller may proceed to execute.
+ */
+async function gateGithubWrite(
+  ctx: SkillContext,
+  args: { approved?: boolean; plan_revision_notes?: string; plan_revision_count?: number },
+  opts: { title: string; summary: string; resumeTool: string; resumeArgs: Record<string, unknown>; intent: GithubPlanIntent },
+): Promise<SkillResult | null> {
+  const gate = resolveWriteGate(ctx, args)
+  if (gate === 'execute') return null
+  if (gate === 'plan') {
+    const revisionNotes = typeof args.plan_revision_notes === 'string' ? args.plan_revision_notes.trim() : undefined
+    const revisionCount = Number.isFinite(args.plan_revision_count) ? Number(args.plan_revision_count) : 0
+    const intent = revisionNotes
+      ? { ...opts.intent, summary: `${opts.intent.summary}\n\nAjustes solicitados: ${revisionNotes}` }
+      : opts.intent
+    return proposeGithubPlan(ctx, {
+      title: opts.title,
+      resumeTool: opts.resumeTool,
+      resumeArgs: opts.resumeArgs,
+      intent,
+      revisionNotes,
+      revisionCount,
+    })
+  }
+  return requestGithubApproval(ctx, { title: opts.title, summary: opts.summary, resumeTool: opts.resumeTool, resumeArgs: opts.resumeArgs })
+}
+
 // ── Read skills ───────────────────────────────────────────────────────────────
 
 const githubListReposSkill: Skill = {
@@ -162,14 +293,18 @@ const githubCreateIssueSkill: Skill<GithubCreateIssueArgs> = {
     const title = String(args.title ?? '').trim()
     if (!title) return { tool_message: 'Erro: "title" é obrigatório.' }
     const body = String(args.body ?? '').trim()
-    if (approvalGateActive() && args.approved !== true) {
-      return requestGithubApproval(ctx, {
-        title: `Criar issue em ${target.owner}/${target.repo}`,
-        summary: `Título: "${title}".`,
-        resumeTool: 'github_create_issue',
-        resumeArgs: { owner: target.owner, repo: target.repo, title, body },
-      })
-    }
+    const gate = await gateGithubWrite(ctx, args, {
+      title: `Criar issue em ${target.owner}/${target.repo}`,
+      summary: `Título: "${title}".`,
+      resumeTool: 'github_create_issue',
+      resumeArgs: { owner: target.owner, repo: target.repo, title, body },
+      intent: {
+        summary: `Abrir uma nova issue "${title}" em ${target.owner}/${target.repo}.`,
+        steps: [{ title: `Criar issue "${title}"`, tool: 'github_create_issue', detail: body ? body.slice(0, 200) : undefined }],
+        targetRepo: `${target.owner}/${target.repo}`,
+      },
+    })
+    if (gate) return gate
     try {
       const issue = await githubCreateIssue(token, target.owner, target.repo, title, body, ctx.signal)
       emitConnector(ctx, `GitHub: issue #${issue.number} criada`)
@@ -198,14 +333,18 @@ const githubOpenPrSkill: Skill<GithubOpenPrArgs> = {
     const base = String(args.base ?? '').trim()
     if (!title || !head || !base) return { tool_message: 'Erro: "title", "head" e "base" são obrigatórios.' }
     const body = String(args.body ?? '').trim()
-    if (approvalGateActive() && args.approved !== true) {
-      return requestGithubApproval(ctx, {
-        title: `Abrir PR em ${target.owner}/${target.repo}`,
-        summary: `"${title}" (${head} → ${base}).`,
-        resumeTool: 'github_open_pr',
-        resumeArgs: { owner: target.owner, repo: target.repo, title, head, base, body },
-      })
-    }
+    const gate = await gateGithubWrite(ctx, args, {
+      title: `Abrir PR em ${target.owner}/${target.repo}`,
+      summary: `"${title}" (${head} → ${base}).`,
+      resumeTool: 'github_open_pr',
+      resumeArgs: { owner: target.owner, repo: target.repo, title, head, base, body },
+      intent: {
+        summary: `Abrir um pull request "${title}" de ${head} para ${base} em ${target.owner}/${target.repo}.`,
+        steps: [{ title: `Abrir PR "${title}" (${head} → ${base})`, tool: 'github_open_pr', detail: body ? body.slice(0, 200) : undefined }],
+        targetRepo: `${target.owner}/${target.repo}`,
+      },
+    })
+    if (gate) return gate
     try {
       const pr = await githubCreatePullRequest(token, target.owner, target.repo, { title, head, base, body }, ctx.signal)
       emitConnector(ctx, `GitHub: PR #${pr.number} aberto`)
@@ -233,14 +372,18 @@ const githubCommentSkill: Skill<GithubCommentArgs> = {
     if (!Number.isFinite(issueNumber) || issueNumber <= 0) return { tool_message: 'Erro: "issue_number" inválido.' }
     const body = String(args.body ?? '').trim()
     if (!body) return { tool_message: 'Erro: "body" é obrigatório.' }
-    if (approvalGateActive() && args.approved !== true) {
-      return requestGithubApproval(ctx, {
-        title: `Comentar em ${target.owner}/${target.repo}#${issueNumber}`,
-        summary: body.slice(0, 240),
-        resumeTool: 'github_comment',
-        resumeArgs: { owner: target.owner, repo: target.repo, issue_number: issueNumber, body },
-      })
-    }
+    const gate = await gateGithubWrite(ctx, args, {
+      title: `Comentar em ${target.owner}/${target.repo}#${issueNumber}`,
+      summary: body.slice(0, 240),
+      resumeTool: 'github_comment',
+      resumeArgs: { owner: target.owner, repo: target.repo, issue_number: issueNumber, body },
+      intent: {
+        summary: `Publicar um comentário em ${target.owner}/${target.repo}#${issueNumber}.`,
+        steps: [{ title: `Comentar em #${issueNumber}`, tool: 'github_comment', detail: body.slice(0, 200) }],
+        targetRepo: `${target.owner}/${target.repo}`,
+      },
+    })
+    if (gate) return gate
     try {
       const comment = await githubAddIssueComment(token, target.owner, target.repo, issueNumber, body, ctx.signal)
       emitConnector(ctx, `GitHub: comentário em #${issueNumber}`)
@@ -273,14 +416,20 @@ const githubWriteFileSkill: Skill<GithubWriteFileArgs> = {
     if (!branch) return { tool_message: 'Erro: "branch" é obrigatório (nunca escrevemos direto em main/master).' }
     if (isProtectedBranch(branch)) return { tool_message: `Erro: escrita direta em "${branch}" bloqueada. Crie um branch dedicado e abra um PR.` }
     const message = String(args.message ?? '').trim() || `Atualiza ${path}`
-    if (approvalGateActive() && args.approved !== true) {
-      return requestGithubApproval(ctx, {
-        title: `Gravar arquivo em ${target.owner}/${target.repo}`,
-        summary: `${path} em ${branch} (${args.content.length} caracteres).`,
-        resumeTool: 'github_write_file',
-        resumeArgs: { owner: target.owner, repo: target.repo, path, content: args.content, message, branch },
-      })
-    }
+    const gate = await gateGithubWrite(ctx, args, {
+      title: `Gravar arquivo em ${target.owner}/${target.repo}`,
+      summary: `${path} em ${branch} (${args.content.length} caracteres).`,
+      resumeTool: 'github_write_file',
+      resumeArgs: { owner: target.owner, repo: target.repo, path, content: args.content, message, branch },
+      intent: {
+        summary: `Criar/atualizar ${path} no branch ${branch} de ${target.owner}/${target.repo}.`,
+        steps: [{ title: `Gravar ${path}`, tool: 'github_write_file', files: [path], commands: [`git commit -m "${message}"`] }],
+        affectedFiles: [path],
+        commands: [`git commit -m "${message}"`],
+        targetRepo: `${target.owner}/${target.repo}`,
+      },
+    })
+    if (gate) return gate
     try {
       const sha = await githubGetFileSha(token, target.owner, target.repo, path, branch, ctx.signal)
       const res = await githubPutFile(token, target.owner, target.repo, { path, content: args.content, message, branch, sha }, ctx.signal)
@@ -311,14 +460,20 @@ const githubDeleteFileSkill: Skill<GithubDeleteFileArgs> = {
     if (!branch) return { tool_message: 'Erro: "branch" é obrigatório (nunca apagamos direto em main/master).' }
     if (isProtectedBranch(branch)) return { tool_message: `Erro: remoção direta em "${branch}" bloqueada. Crie um branch dedicado e abra um PR.` }
     const message = String(args.message ?? '').trim() || `Remove ${path}`
-    if (approvalGateActive() && args.approved !== true) {
-      return requestGithubApproval(ctx, {
-        title: `Remover arquivo em ${target.owner}/${target.repo}`,
-        summary: `${path} em ${branch}.`,
-        resumeTool: 'github_delete_file',
-        resumeArgs: { owner: target.owner, repo: target.repo, path, message, branch },
-      })
-    }
+    const gate = await gateGithubWrite(ctx, args, {
+      title: `Remover arquivo em ${target.owner}/${target.repo}`,
+      summary: `${path} em ${branch}.`,
+      resumeTool: 'github_delete_file',
+      resumeArgs: { owner: target.owner, repo: target.repo, path, message, branch },
+      intent: {
+        summary: `Remover ${path} do branch ${branch} de ${target.owner}/${target.repo}.`,
+        steps: [{ title: `Remover ${path}`, tool: 'github_delete_file', files: [path], commands: [`git rm ${path}`] }],
+        affectedFiles: [path],
+        commands: [`git rm ${path}`],
+        targetRepo: `${target.owner}/${target.repo}`,
+      },
+    })
+    if (gate) return gate
     try {
       const sha = await githubGetFileSha(token, target.owner, target.repo, path, branch, ctx.signal)
       if (!sha) return { tool_message: `Erro: "${path}" não existe em ${branch}.` }
@@ -348,14 +503,19 @@ const githubCreateBranchSkill: Skill<GithubCreateBranchArgs> = {
     const from = String(args.from ?? '').trim()
     if (!branch || !from) return { tool_message: 'Erro: "branch" (novo) e "from" (base) são obrigatórios.' }
     if (isProtectedBranch(branch)) return { tool_message: `Erro: "${branch}" é um branch protegido.` }
-    if (approvalGateActive() && args.approved !== true) {
-      return requestGithubApproval(ctx, {
-        title: `Criar branch em ${target.owner}/${target.repo}`,
-        summary: `"${branch}" a partir de "${from}".`,
-        resumeTool: 'github_create_branch',
-        resumeArgs: { owner: target.owner, repo: target.repo, branch, from },
-      })
-    }
+    const gate = await gateGithubWrite(ctx, args, {
+      title: `Criar branch em ${target.owner}/${target.repo}`,
+      summary: `"${branch}" a partir de "${from}".`,
+      resumeTool: 'github_create_branch',
+      resumeArgs: { owner: target.owner, repo: target.repo, branch, from },
+      intent: {
+        summary: `Criar o branch ${branch} a partir de ${from} em ${target.owner}/${target.repo}.`,
+        steps: [{ title: `Criar branch ${branch}`, tool: 'github_create_branch', commands: [`git checkout -b ${branch} ${from}`] }],
+        commands: [`git checkout -b ${branch} ${from}`],
+        targetRepo: `${target.owner}/${target.repo}`,
+      },
+    })
+    if (gate) return gate
     try {
       const res = await githubCreateBranch(token, target.owner, target.repo, { newBranch: branch, fromBranch: from }, ctx.signal)
       emitConnector(ctx, `GitHub: branch ${branch} criado`)
@@ -402,15 +562,21 @@ const githubCommitSkill: Skill<GithubCommitArgs> = {
     if (!message) return { tool_message: 'Erro: "message" é obrigatório.' }
     const parsed = parseCommitFiles(args.files)
     if (!Array.isArray(parsed)) return { tool_message: `Erro: ${parsed.error}` }
-    if (approvalGateActive() && args.approved !== true) {
-      const changed = parsed.map(f => `${f.delete ? '− ' : '± '}${f.path}`).join('\n')
-      return requestGithubApproval(ctx, {
-        title: `Commit em ${target.owner}/${target.repo}@${branch}`,
-        summary: `${message}\n\n${changed}`,
-        resumeTool: 'github_commit',
-        resumeArgs: { owner: target.owner, repo: target.repo, branch, message, files: parsed },
-      })
-    }
+    const changedPaths = parsed.map(f => f.path)
+    const gate = await gateGithubWrite(ctx, args, {
+      title: `Commit em ${target.owner}/${target.repo}@${branch}`,
+      summary: `${message}\n\n${parsed.map(f => `${f.delete ? '− ' : '± '}${f.path}`).join('\n')}`,
+      resumeTool: 'github_commit',
+      resumeArgs: { owner: target.owner, repo: target.repo, branch, message, files: parsed },
+      intent: {
+        summary: `Fazer um commit "${message}" com ${parsed.length} alteração(ões) no branch ${branch} de ${target.owner}/${target.repo}.`,
+        steps: parsed.map(f => ({ title: `${f.delete ? 'Remover' : 'Gravar'} ${f.path}`, tool: 'github_commit', files: [f.path] })),
+        affectedFiles: changedPaths,
+        commands: [`git commit -m "${message}"`],
+        targetRepo: `${target.owner}/${target.repo}`,
+      },
+    })
+    if (gate) return gate
     try {
       const res = await githubCommitTree(token, target.owner, target.repo, { branch, message, files: parsed }, ctx.signal)
       emitConnector(ctx, `GitHub: commit ${res.sha.slice(0, 7)} em ${branch} (${parsed.length} arquivo(s))`)

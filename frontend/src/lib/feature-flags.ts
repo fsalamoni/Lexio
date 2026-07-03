@@ -233,6 +233,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     devToggleable: true,
   },
   {
+    key: 'FF_CHAT_AGENT_MODES',
+    label: 'Chat: Modos de execução do agente',
+    description: 'Habilita o seletor de modo por conversa (automático / sempre perguntar / planejar). Em "planejar", o agente estuda o pedido e entrega um plano estruturado (passos, arquivos, comandos) para aprovar, rejeitar ou revisar antes de executar.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_CHAT_AGENT_MODES',
+    devToggleable: true,
+  },
+  {
     key: 'FF_CHAT_ENGINE_PLUS',
     label: 'Chat: Motor aprimorado',
     description: 'Crítico ciente de domínio e multi-eixo, teto de custo em USD por esforço, cache de prompt do sistema e memória rolante entre turnos.',

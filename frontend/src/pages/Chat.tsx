@@ -10,6 +10,7 @@ import SearchPanel from '../components/chat/SearchPanel'
 import SidecarAuditPanel from '../components/chat/SidecarAuditPanel'
 import { useChatController } from '../components/chat/use-chat-controller'
 import { isMockRuntimeActive } from '../lib/chat-orchestrator'
+import { loadGithubConnectorConfig } from '../lib/chat-orchestrator/github-config'
 import { isEnabled } from '../lib/feature-flags'
 import { exportChatConversation } from '../lib/chat-conversation-export'
 import type { HybridResultItem } from '../lib/search-client'
@@ -47,9 +48,30 @@ export default function Chat() {
   }
 
   const controller = useChatController({ conversationId: activeId })
-  const { state, sendMessage, retryExport, cancel, setEffort } = controller
+  const { state, sendMessage, retryExport, cancel, setEffort, setAgentMode } = controller
   const mock = isMockRuntimeActive()
   const busy = state.status === 'sending'
+
+  // Load the configured GitHub target repository to display as scope hint on
+  // the agent mode picker (only relevant when the agent-modes flag is on).
+  const [targetRepo, setTargetRepo] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    if (!isEnabled('FF_CHAT_AGENT_MODES')) return
+    let cancelled = false
+    loadGithubConnectorConfig()
+      .then(cfg => {
+        if (cancelled) return
+        const owner = (cfg.default_owner || '').trim()
+        const repo = (cfg.default_repo || '').trim()
+        setTargetRepo(owner && repo ? `${owner}/${repo}` : undefined)
+      })
+      .catch(() => {
+        if (!cancelled) setTargetRepo(undefined)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Callback para anexar resultados de busca ao contexto do chat
   const handleAttachToContext = useCallback(
@@ -88,6 +110,9 @@ export default function Chat() {
             conversation={state.conversation}
             effort={state.effort}
             onChangeEffort={setEffort}
+            agentMode={state.agentMode}
+            onChangeAgentMode={setAgentMode}
+            targetRepo={targetRepo}
             busy={busy}
             onCancel={cancel}
             onBack={() => setMobileView('list')}

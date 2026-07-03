@@ -104,6 +104,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
     turnId: input.turnId,
     userInput: input.user_input,
     effort: input.effort,
+    agentMode: input.agentMode,
     budget,
     signal: input.signal,
     emit: emitTrail,
@@ -253,6 +254,7 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<RunChatTurnO
           approval_id: result.awaiting_user.approval_id,
           resume_tool: result.awaiting_user.resume_tool,
           resume_args: result.awaiting_user.resume_args,
+          plan: result.awaiting_user.plan,
         },
         llm_executions: budget.records(),
       }

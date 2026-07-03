@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, type Dispatch } from 'react'
 import type {
+  ChatAgentMode,
   ChatConversationData,
   ChatPendingQuestionData,
   ChatTrailEvent,
@@ -8,6 +9,7 @@ import type {
   ChatTurnStatus,
   ChatEffortLevel,
 } from '../../lib/firestore-types'
+import { DEFAULT_CHAT_AGENT_MODE, isChatAgentMode } from '../../lib/firestore-types'
 import {
   appendChatSidecarAuditEntry,
   appendChatTurn,
@@ -19,6 +21,7 @@ import {
   renameChatConversation,
   updateChatApprovalRequest,
   updateChatTurn,
+  updateChatConversationAgentMode,
   updateChatConversationEffort,
   updateChatConversationPreview,
 } from '../../lib/firestore-service'
@@ -86,6 +89,7 @@ export interface ChatControllerState {
   status: 'idle' | 'loading' | 'sending' | 'awaiting_user' | 'error'
   error: string | null
   effort: ChatEffortLevel
+  agentMode: ChatAgentMode
 }
 
 type Action =
@@ -99,6 +103,7 @@ type Action =
   | { type: 'UPDATE_TURN'; turn: ChatTurnData }
   | { type: 'SEND_ERROR'; error: string }
   | { type: 'SET_EFFORT'; effort: ChatEffortLevel }
+  | { type: 'SET_AGENT_MODE'; agentMode: ChatAgentMode }
   | { type: 'SET_LAST_PREVIEW'; preview: string }
 
 const initialState: ChatControllerState = {
@@ -109,6 +114,7 @@ const initialState: ChatControllerState = {
   status: 'idle',
   error: null,
   effort: DEFAULT_EFFORT,
+  agentMode: DEFAULT_CHAT_AGENT_MODE,
 }
 
 const CHAT_CONVERSATION_UPSERTED_EVENT = 'lexio:chat-conversation-upserted'
@@ -133,6 +139,7 @@ function reducer(state: ChatControllerState, action: Action): ChatControllerStat
         turns: action.turns,
         status: action.turns.some(t => t.status === 'awaiting_user') ? 'awaiting_user' : 'idle',
         effort: action.conversation.effort ?? DEFAULT_EFFORT,
+        agentMode: isChatAgentMode(action.conversation.agent_mode) ? action.conversation.agent_mode : DEFAULT_CHAT_AGENT_MODE,
         error: null,
       }
     case 'LOAD_ERROR':
@@ -184,6 +191,8 @@ function reducer(state: ChatControllerState, action: Action): ChatControllerStat
       }
     case 'SET_EFFORT':
       return { ...state, effort: action.effort, conversation: state.conversation ? { ...state.conversation, effort: action.effort } : null }
+    case 'SET_AGENT_MODE':
+      return { ...state, agentMode: action.agentMode, conversation: state.conversation ? { ...state.conversation, agent_mode: action.agentMode } : null }
     case 'SET_LAST_PREVIEW':
       return state.conversation ? { ...state, conversation: { ...state.conversation, last_preview: action.preview } } : state
     default:
@@ -273,6 +282,112 @@ async function executeApprovalDecision(args: {
   })
 }
 
+type PlanDecision = 'approved' | 'rejected' | 'revise'
+
+/**
+ * Resolve a plan proposal card (mode `plan`):
+ *  - `approved`: resume the planned tool in execute mode, restricted to the
+ *    planned scope (the base resume args plus `approved: true`).
+ *  - `rejected`: close the request without executing anything.
+ *  - `revise`: re-enter planning with the user's adjustments appended as
+ *    context, producing a fresh plan proposal (a new planning turn).
+ */
+async function executePlanDecision(args: {
+  pendingTurn: ChatTurnData
+  pendingQuestion: ChatPendingQuestionData
+  decision: PlanDecision
+  userInput: string
+  conversationId: string
+  userId: string | null
+  effort: ChatEffortLevel
+  dispatch: Dispatch<Action>
+}): Promise<void> {
+  const { pendingTurn, pendingQuestion, decision, userInput, conversationId, userId, effort, dispatch } = args
+  const approvalId = pendingQuestion.approval_id ?? `local-plan-${pendingTurn.id ?? Date.now()}`
+  const plan = pendingQuestion.plan
+  const completedAt = new Date().toISOString()
+  const resolutionEvent: ChatTrailEvent = {
+    type: 'approval_resolved',
+    approval_id: approvalId,
+    approved: decision === 'approved',
+    reason: decision === 'approved'
+      ? 'Usuário aprovou o plano; executando no escopo planejado.'
+      : decision === 'revise'
+        ? 'Usuário solicitou revisão do plano.'
+        : 'Usuário rejeitou o plano.',
+    ts: completedAt,
+  }
+
+  const nextPlanState = decision === 'approved' ? 'approved' : decision === 'revise' ? 'revising' : 'rejected'
+  if (IS_FIREBASE && userId && pendingTurn.id) {
+    try {
+      await updateChatTurn(userId, conversationId, pendingTurn.id, {
+        trail: compactChatTrailForPersistence(mergeStreamingTrailEvent(pendingTurn.trail, resolutionEvent)),
+        status: 'done',
+        pending_question: null,
+        completed_at: completedAt,
+      })
+      if (pendingQuestion.approval_id) {
+        await updateChatApprovalRequest(userId, conversationId, pendingQuestion.approval_id, {
+          status: decision === 'approved' ? 'approved' : decision === 'revise' ? 'cancelled' : 'rejected',
+          decided_at: completedAt,
+          decided_by: userId,
+          ...(plan ? { plan: { ...plan, state: nextPlanState } } : {}),
+        })
+      }
+    } catch {
+      // best-effort; in-memory state still resolves the pending question.
+    }
+  }
+  if (pendingTurn.id) {
+    dispatch({ type: 'RESOLVE_PENDING_TURN', turnId: pendingTurn.id, event: resolutionEvent, completedAt })
+  }
+
+  if (decision === 'rejected') {
+    await persistResolvedApprovalReply({
+      conversationId,
+      userId,
+      userInput,
+      resolutionEvent,
+      assistantMarkdown: 'Plano rejeitado. Nenhuma alteração foi executada.',
+      dispatch,
+    })
+    return
+  }
+
+  if (!pendingQuestion.resume_tool || !pendingQuestion.resume_args) {
+    await persistResolvedApprovalReply({
+      conversationId,
+      userId,
+      userInput,
+      resolutionEvent,
+      assistantMarkdown: 'Não há ação planejada para retomar.',
+      dispatch,
+    })
+    return
+  }
+
+  if (decision === 'approved') {
+    // Execute strictly within the planned scope.
+    const resumeQuestion: ChatPendingQuestionData = {
+      ...pendingQuestion,
+      resume_args: { ...pendingQuestion.resume_args, approved: true, approval_id: approvalId },
+    }
+    await runApprovedResumeTool({ conversationId, userId, effort, userInput, pendingQuestion: resumeQuestion, resolutionEvent, dispatch })
+    return
+  }
+
+  // decision === 'revise' → re-plan incorporating the user's adjustments.
+  const revisionCount = (plan?.revision_count ?? 0) + 1
+  const reviseArgs = { ...pendingQuestion.resume_args }
+  delete (reviseArgs as Record<string, unknown>).approved
+  const resumeQuestion: ChatPendingQuestionData = {
+    ...pendingQuestion,
+    resume_args: { ...reviseArgs, plan_revision_notes: userInput, plan_revision_count: revisionCount },
+  }
+  await runApprovedResumeTool({ conversationId, userId, effort, userInput, pendingQuestion: resumeQuestion, resolutionEvent, dispatch, agentMode: 'plan' })
+}
+
 async function persistResolvedApprovalReply(args: {
   conversationId: string
   userId: string | null
@@ -354,8 +469,10 @@ async function runApprovedResumeTool(args: {
   pendingQuestion: ChatPendingQuestionData
   resolutionEvent: ChatTrailEvent
   dispatch: Dispatch<Action>
+  /** When set, the resumed skill runs under this mode (used to re-enter `plan`). */
+  agentMode?: ChatAgentMode
 }): Promise<void> {
-  const { conversationId, userId, effort, userInput, pendingQuestion, resolutionEvent, dispatch } = args
+  const { conversationId, userId, effort, userInput, pendingQuestion, resolutionEvent, dispatch, agentMode } = args
   const mock = isMockRuntimeActive()
   let turnId = `local-${Date.now()}`
   const startedAt = new Date().toISOString()
@@ -417,6 +534,7 @@ async function runApprovedResumeTool(args: {
       turnId,
       userInput,
       effort,
+      agentMode,
       budget: createApprovalResumeBudget(),
       signal: controller.signal,
       emit: onTrail,
@@ -446,6 +564,7 @@ async function runApprovedResumeTool(args: {
         approval_id: result.awaiting_user.approval_id,
         resume_tool: result.awaiting_user.resume_tool,
         resume_args: result.awaiting_user.resume_args,
+        plan: result.awaiting_user.plan,
       } : null,
       llm_executions: [],
       completed_at: completedAt,
@@ -513,6 +632,18 @@ function normalizeApprovalDecision(text: string): ApprovalDecision | null {
   if (/^(rejeitar|rejeito|negar|nego|cancelar|cancela|não|nao)\b/.test(normalized)) return 'rejected'
   if (/^(ajustar|ajuste|alterar|corrigir|modificar|revisar)\b/.test(normalized)) return 'adjust'
   return null
+}
+
+/**
+ * Map a free-text reply to a plan-card decision. Any non approve/reject reply
+ * is treated as revision notes so the user can simply describe the adjustments.
+ */
+function normalizePlanDecision(text: string): 'approved' | 'rejected' | 'revise' | null {
+  const normalized = text.trim().toLowerCase()
+  if (!normalized) return null
+  if (/^(aprovar|aprovado|aprovada|autorizar|autorizo|executar|pode executar|sim|ok|confirmo)\b/.test(normalized)) return 'approved'
+  if (/^(rejeitar|rejeito|negar|nego|cancelar|cancela|descartar|não|nao)\b/.test(normalized)) return 'rejected'
+  return 'revise'
 }
 
 /**
@@ -638,6 +769,22 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     let contextSources = buildAttachmentContextSources(attachments)
 
     const pendingApproval = findLatestPendingApprovalTurn(state.turns)
+    if (pendingApproval?.question.plan) {
+      const planDecision = normalizePlanDecision(trimmed)
+      if (planDecision) {
+        await executePlanDecision({
+          pendingTurn: pendingApproval.turn,
+          pendingQuestion: pendingApproval.question,
+          decision: planDecision,
+          userInput: trimmed,
+          conversationId,
+          userId,
+          effort: state.effort,
+          dispatch,
+        })
+        return
+      }
+    }
     const approvalDecision = pendingApproval ? normalizeApprovalDecision(trimmed) : null
     if (pendingApproval && approvalDecision) {
       await executeApprovalDecision({
@@ -904,6 +1051,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
         conversationId,
         turnId,
         effort: state.effort,
+        agentMode: isEnabled('FF_CHAT_AGENT_MODES') ? state.agentMode : undefined,
         history,
         user_input: trimmed,
         attachments,
@@ -1036,7 +1184,7 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     } finally {
       abortRef.current = null
     }
-  }, [conversationId, state.effort, state.status, state.turns, userId])
+  }, [conversationId, state.effort, state.agentMode, state.status, state.turns, userId])
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
@@ -1047,6 +1195,17 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     if (IS_FIREBASE && userId && conversationId) {
       try {
         await updateChatConversationEffort(userId, conversationId, effort)
+      } catch {
+        // best-effort: UI already reflects the new value
+      }
+    }
+  }, [conversationId, userId])
+
+  const setAgentMode = useCallback(async (agentMode: ChatAgentMode) => {
+    dispatch({ type: 'SET_AGENT_MODE', agentMode })
+    if (IS_FIREBASE && userId && conversationId) {
+      try {
+        await updateChatConversationAgentMode(userId, conversationId, agentMode)
       } catch {
         // best-effort: UI already reflects the new value
       }
@@ -1144,7 +1303,8 @@ export function useChatController({ conversationId }: UseChatControllerArgs) {
     retryExport,
     cancel,
     setEffort,
-  }), [state, sendMessage, retryExport, cancel, setEffort])
+    setAgentMode,
+  }), [state, sendMessage, retryExport, cancel, setEffort, setAgentMode])
 
   return value
 }

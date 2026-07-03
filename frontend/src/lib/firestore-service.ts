@@ -611,6 +611,7 @@ export const createChatConversation = chatRepository.createChatConversation
 export const ensureChatConversation = chatRepository.ensureChatConversation
 export const renameChatConversation = chatRepository.renameChatConversation
 export const updateChatConversationEffort = chatRepository.updateChatConversationEffort
+export const updateChatConversationAgentMode = chatRepository.updateChatConversationAgentMode
 export const updateChatConversationPreview = chatRepository.updateChatConversationPreview
 export const setChatConversationPinned = chatRepository.setChatConversationPinned
 export const deleteChatConversation = chatRepository.deleteChatConversation

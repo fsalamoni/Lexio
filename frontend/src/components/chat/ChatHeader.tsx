@@ -1,8 +1,9 @@
 import { ArrowLeft, Download, MessagesSquare, Search, Square, WifiOff } from 'lucide-react'
 import clsx from 'clsx'
-import type { ChatConversationData, ChatEffortLevel } from '../../lib/firestore-types'
+import type { ChatAgentMode, ChatConversationData, ChatEffortLevel } from '../../lib/firestore-types'
 import { CHAT_ORCHESTRATOR_AGENT_DEFS } from '../../lib/model-config'
 import { isEnabled } from '../../lib/feature-flags'
+import AgentModePicker from './AgentModePicker'
 import EffortPicker from './EffortPicker'
 import SidecarStatusBadge from './SidecarStatusBadge'
 
@@ -10,6 +11,11 @@ interface ChatHeaderProps {
   conversation: ChatConversationData | null
   effort: ChatEffortLevel
   onChangeEffort: (effort: ChatEffortLevel) => void
+  /** Per-conversation execution mode (auto / ask / plan). */
+  agentMode?: ChatAgentMode
+  onChangeAgentMode?: (mode: ChatAgentMode) => void
+  /** Configured target repository (owner/repo) shown as a scope hint on the mode picker. */
+  targetRepo?: string
   busy: boolean
   onCancel: () => void
   onToggleSearch?: () => void
@@ -24,6 +30,9 @@ export default function ChatHeader({
   conversation,
   effort,
   onChangeEffort,
+  agentMode,
+  onChangeAgentMode,
+  targetRepo,
   busy,
   onCancel,
   onToggleSearch,
@@ -90,6 +99,14 @@ export default function ChatHeader({
           {isEnabled('FF_CHAT_PC_APPROVALS') ? <SidecarStatusBadge /> : <SidecarStatusPlaceholder />}
         </div>
         <EffortPicker value={effort} onChange={onChangeEffort} disabled={busy} />
+        {isEnabled('FF_CHAT_AGENT_MODES') && agentMode && onChangeAgentMode && (
+          <AgentModePicker
+            value={agentMode}
+            onChange={onChangeAgentMode}
+            disabled={busy}
+            targetRepo={targetRepo}
+          />
+        )}
         {busy && (
           <button
             type="button"

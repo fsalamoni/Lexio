@@ -3,7 +3,7 @@ import { DOCTYPE_LABELS } from './constants'
 import { PROVIDERS, providerIdFromLabel } from './providers'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 
-export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'document_generation_v4' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator' | 'chat_orchestrator_v2' | 'chat_attachment_ingestion' | 'chat_artifact_generation' | 'chat_export_materialization' | 'chat_multimodal_analysis' | 'github_agent'
+export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'document_generation_v4' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator' | 'chat_orchestrator_v2' | 'chat_attachment_ingestion' | 'chat_artifact_generation' | 'chat_export_materialization' | 'chat_multimodal_analysis' | 'chat_agent_planning' | 'github_agent'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -124,6 +124,7 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   chat_artifact_generation: 'Chat: Geração de artefatos',
   chat_export_materialization: 'Chat: Materialização de exports',
   chat_multimodal_analysis: 'Chat: Análise multimodal',
+  chat_agent_planning: 'Chat: Planejamento do agente',
   github_agent: 'Agente GitHub',
 }
 
