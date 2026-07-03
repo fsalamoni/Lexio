@@ -40,6 +40,7 @@ vi.mock('./components/v2/V2WorkspaceLayout', () => ({
 vi.mock('./lib/feature-flags', () => ({
   FEATURE_FLAGS_UPDATED_EVENT: 'lexio:flags-updated',
   clearRuntimeFeatureFlags: vi.fn(),
+  isEnabled: vi.fn(() => false),
 }))
 
 vi.mock('./lib/firebase', () => ({ IS_FIREBASE: true }))
