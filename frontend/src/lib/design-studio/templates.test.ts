@@ -20,6 +20,7 @@ describe('design-studio templates', () => {
       'wireframe',
       'document',
       'animation',
+      'code',
     ])
   })
 
@@ -28,6 +29,7 @@ describe('design-studio templates', () => {
     expect(isDesignArtifactKind('unknown')).toBe(false)
     expect(isDesignArtifactKind(42)).toBe(false)
     expect(describeDesignArtifactKind('app')).toBe('App (mobile)')
+    expect(describeDesignArtifactKind('code')).toBe('Código + design')
   })
 
   it('escapes HTML-significant characters', () => {

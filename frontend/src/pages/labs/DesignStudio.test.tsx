@@ -11,7 +11,10 @@ vi.mock('../../lib/feature-flags', () => ({
 }))
 
 afterEach(() => cleanup())
-beforeEach(() => isEnabledMock.mockReset())
+beforeEach(() => {
+  isEnabledMock.mockReset()
+  window.localStorage.clear()
+})
 
 describe('DesignStudio', () => {
   it('shows the gated state when FF_DESIGN_STUDIO is off', () => {
@@ -24,22 +27,22 @@ describe('DesignStudio', () => {
   it('renders the studio shell and every artifact kind when enabled', () => {
     isEnabledMock.mockReturnValue(true)
     render(<DesignStudio />)
-    expect(screen.getByRole('button', { name: 'Gerar design' })).toBeDefined()
-    for (const label of ['Slides', 'Site (web)', 'App (mobile)', 'Wireframe', 'Documento', 'Animação']) {
+    expect(screen.getByRole('button', { name: 'Gerar design/código' })).toBeDefined()
+    expect(screen.getByRole('heading', { name: 'Aplicar em repositório vem antes de criar' })).toBeDefined()
+    for (const label of ['Slides', 'Site (web)', 'App (mobile)', 'Wireframe', 'Documento', 'Animação', 'Código + design']) {
       expect(screen.getByRole('button', { name: label })).toBeDefined()
     }
   })
 
-  it('keeps generation disabled until a brief is provided, then renders a live preview', () => {
+  it('requires a workspace repository first, then generates without a mandatory brief', () => {
     isEnabledMock.mockReturnValue(true)
     render(<DesignStudio />)
 
-    const generate = screen.getByRole('button', { name: 'Gerar design' }) as HTMLButtonElement
+    const generate = screen.getByRole('button', { name: 'Gerar design/código' }) as HTMLButtonElement
     expect(generate.disabled).toBe(true)
 
-    fireEvent.change(screen.getByLabelText('Briefing do design'), {
-      target: { value: 'Landing page para escritório trabalhista' },
-    })
+    fireEvent.change(screen.getByLabelText('Owner do repositório de trabalho'), { target: { value: 'fsalamoni' } })
+    fireEvent.change(screen.getByLabelText('Nome do repositório de trabalho'), { target: { value: 'Lexio' } })
     expect(generate.disabled).toBe(false)
 
     fireEvent.click(generate)
@@ -52,7 +55,6 @@ describe('DesignStudio', () => {
 
   it('exposes theme selection, template save and multi-format export once a design exists', () => {
     isEnabledMock.mockReturnValue(true)
-    window.localStorage.clear()
     render(<DesignStudio />)
 
     // Theme picker and starter templates are always present.
@@ -63,10 +65,12 @@ describe('DesignStudio', () => {
     expect((screen.getByRole('button', { name: /Exportar template/ }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: 'Salvar' }) as HTMLButtonElement).disabled).toBe(true)
 
+    fireEvent.change(screen.getByLabelText('Owner do repositório de trabalho'), { target: { value: 'fsalamoni' } })
+    fireEvent.change(screen.getByLabelText('Nome do repositório de trabalho'), { target: { value: 'Lexio' } })
     fireEvent.change(screen.getByLabelText('Briefing do design'), {
       target: { value: 'Landing page para escritório trabalhista' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Gerar design' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar design/código' }))
 
     // Manual editing surface appears with an editable title.
     const title = screen.getByLabelText('Título do design') as HTMLInputElement
@@ -79,6 +83,21 @@ describe('DesignStudio', () => {
     fireEvent.change(screen.getByLabelText('Nome do template'), { target: { value: 'Meu modelo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     expect(screen.getByText('Meu modelo')).toBeDefined()
+  })
+
+  it('creates artifacts from the conversational orchestrator and saves recent context', () => {
+    isEnabledMock.mockReturnValue(true)
+    render(<DesignStudio />)
+
+    fireEvent.change(screen.getByLabelText('Owner do repositório de trabalho'), { target: { value: 'fsalamoni' } })
+    fireEvent.change(screen.getByLabelText('Nome do repositório de trabalho'), { target: { value: 'Lexio' } })
+    fireEvent.change(screen.getByLabelText('Mensagem para o orquestrador'), {
+      target: { value: 'Criar uma área de produto com código e design' },
+    })
+    fireEvent.click(screen.getByLabelText('Enviar mensagem ao orquestrador'))
+
+    expect(screen.getByText(/Atualizei o contexto em fsalamoni\/Lexio/)).toBeDefined()
+    expect(screen.getByTitle('Amostra do design')).toBeDefined()
   })
 
   it('renders the repository apply panel and guides when no token is configured', async () => {
