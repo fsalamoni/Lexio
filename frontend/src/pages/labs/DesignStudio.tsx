@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
+  ChevronDown,
   Cloud,
   Code2,
   Download,
@@ -20,11 +21,14 @@ import {
   Save,
   Send,
   Settings2,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Upload,
 } from 'lucide-react'
 import { V2PageHero } from '../../components/v2/V2PagePrimitives'
+import AgentModePicker from '../../components/chat/AgentModePicker'
+import type { ChatAgentMode } from '../../lib/firestore-types'
 import { isEnabled } from '../../lib/feature-flags'
 import { loadGithubConnectorConfig } from '../../lib/chat-orchestrator/github-config'
 import {
@@ -70,14 +74,6 @@ import {
 } from '../../lib/design-studio/workspace-store'
 
 type ExportFormat = 'html' | 'json' | 'markdown'
-
-type ApplyMode = 'auto' | 'ask' | 'plan'
-
-const APPLY_MODE_OPTIONS: Array<{ mode: ApplyMode; label: string; hint: string }> = [
-  { mode: 'auto', label: 'Automático', hint: 'Aplica direto ao clicar.' },
-  { mode: 'ask', label: 'Perguntar', hint: 'Mostra um resumo para confirmar.' },
-  { mode: 'plan', label: 'Planejar', hint: 'Só descreve o que faria.' },
-]
 
 const APPLY_FORMAT_LABELS: Record<DesignApplyFormat, string> = {
   html: 'HTML',
@@ -147,6 +143,8 @@ export default function DesignStudio() {
   const [recentWorkspaces, setRecentWorkspaces] = useState<DesignWorkspace[]>([])
   const [messages, setMessages] = useState<DesignStudioChatMessage[]>(() => [defaultOrchestratorMessage()])
   const [chatInput, setChatInput] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(true)
+  const [agentMode, setAgentMode] = useState<ChatAgentMode>('ask')
 
   // ── Repository apply (connector) state ──────────────────────────────────────
   const githubEnabled = isEnabled('FF_CHAT_GITHUB')
@@ -158,7 +156,6 @@ export default function DesignStudio() {
   const [targetDir, setTargetDir] = useState('design')
   const [commitMessage, setCommitMessage] = useState('')
   const [openPr, setOpenPr] = useState(true)
-  const [applyMode, setApplyMode] = useState<ApplyMode>('ask')
   const [applyFormats, setApplyFormats] = useState<DesignApplyFormat[]>(['html', 'json'])
   const [applying, setApplying] = useState(false)
   const [applyPlan, setApplyPlan] = useState<DesignApplyPlan | null>(null)
@@ -347,7 +344,7 @@ export default function DesignStudio() {
       : `em ${repoOwner.trim()}/${repoName.trim()}`
     const reply = createDesignStudioChatMessage(
       'orchestrator',
-      `Entendido. Atualizei o contexto ${repoHint}, gerei um artefato de ${activeKindMeta?.label || kind} e mantive o fluxo encadeado para UX, código, revisão e aplicação em repositório. Se faltar informação crítica, eu vou perguntar antes de aplicar.`,
+      `Entendido. Atualizei o contexto ${repoHint}, gerei um artefato de ${activeKindMeta?.label || kind} e vou seguir no modo ${agentMode === 'auto' ? 'automático' : agentMode === 'plan' ? 'planejar' : 'perguntar'}, preservando UX, código, revisão e entrega.`,
     )
     setChatInput('')
     setBrief(nextBrief)
@@ -499,7 +496,7 @@ export default function DesignStudio() {
   const handleApply = () => {
     if (!spec || !canApply) return
     setApplyError(null)
-    if (applyMode === 'auto') {
+    if (agentMode === 'auto') {
       void runApply()
       return
     }
@@ -523,11 +520,11 @@ export default function DesignStudio() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28">
       <V2PageHero
         eyebrow={<><Sparkles className="h-3.5 w-3.5" /> Design + Desenvolvimento</>}
-        title="Orquestrador de código e design, já dentro do repositório"
-        description="Escolha primeiro o repositório local ou GitHub, converse com o orquestrador e gere artefatos de produto, UX, código, documentação e aplicação em branch. Briefing, modelos e padrões são opcionais."
+        title="Design Studio limpo, conversacional e focado na amostra"
+        description="Escolha o repositório uma vez, ajuste configurações quando precisar e trabalhe pelo chat com visualização central, resultados claros e entrega controlada."
       />
 
       {notice && (
@@ -539,175 +536,538 @@ export default function DesignStudio() {
         </div>
       )}
 
-      <section className="v2-panel grid gap-4 p-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">
-                1 · Repositório de trabalho
-              </p>
-              <h2 className="mt-1 text-lg font-semibold text-[var(--v2-ink-strong)]">
-                Aplicar em repositório vem antes de criar
-              </h2>
-              <p className="mt-1 text-xs leading-5 text-[var(--v2-ink-soft)]">
-                Esta seleção permanece salva neste navegador até você alterar. O contexto do chat, briefing,
-                artefato e configurações do repositório ficam vinculados ao trabalho recente.
-              </p>
-            </div>
-            <button type="button" onClick={startNewWorkspace} className="v2-btn-secondary shrink-0 justify-center">
-              <Plus className="h-4 w-4" /> Novo
-            </button>
-          </div>
+      <section className="v2-panel overflow-hidden p-0">
+        <button
+          type="button"
+          onClick={() => setSettingsOpen((current) => !current)}
+          aria-expanded={settingsOpen}
+          aria-controls="design-studio-settings"
+          className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-[rgba(15,23,42,0.03)]"
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="rounded-2xl bg-[rgba(15,118,110,0.1)] p-2 text-[var(--v2-accent-strong)]">
+              <SlidersHorizontal className="h-5 w-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">
+                Configurações do workspace
+              </span>
+              <span className="mt-1 block truncate text-lg font-semibold text-[var(--v2-ink-strong)]">
+                {hasWorkspaceTarget ? workspaceLabel : 'Defina o repositório para começar'}
+              </span>
+            </span>
+          </span>
+          <span className="hidden shrink-0 items-center gap-2 text-xs text-[var(--v2-ink-soft)] sm:flex">
+            {activeKindMeta?.label || 'Artefato'} · {agentMode === 'auto' ? 'Automático' : agentMode === 'plan' ? 'Planejar' : 'Perguntar'}
+            <ChevronDown className={`h-4 w-4 transition-transform ${settingsOpen ? 'rotate-180' : ''}`} />
+          </span>
+        </button>
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            {([
-              { target: 'github' as const, label: 'Nuvem GitHub', icon: Cloud, hint: 'Branch, commit e PR com o conector GitHub.' },
-              { target: 'local' as const, label: 'Repositório local', icon: FolderGit2, hint: 'Escopo local persistido para continuar o trabalho.' },
-            ]).map((option) => {
-              const Icon = option.icon
-              return (
-                <button
-                  key={option.target}
-                  type="button"
-                  aria-pressed={workTarget === option.target}
-                  onClick={() => {
-                    setWorkTarget(option.target)
-                    setApplyPlan(null)
+        {settingsOpen && (
+          <div id="design-studio-settings" className="border-t border-[var(--v2-line-soft)] p-5">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="rounded-2xl border border-[var(--v2-line-soft)] bg-white/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">
+                      1 · Repositório escolhido
+                    </p>
+                    <h2 className="mt-1 text-base font-semibold text-[var(--v2-ink-strong)]">Contexto único do trabalho</h2>
+                    <p className="mt-1 text-xs leading-5 text-[var(--v2-ink-soft)]">
+                      O Design Studio usa este escopo para chat, geração, prévia e entrega — sem repetir seleção na etapa final.
+                    </p>
+                  </div>
+                  <button type="button" onClick={startNewWorkspace} className="v2-btn-secondary shrink-0 justify-center">
+                    <Plus className="h-4 w-4" /> Novo
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {([
+                    { target: 'github' as const, label: 'Nuvem GitHub', icon: Cloud, hint: 'Branch, commit e PR pelo conector GitHub.' },
+                    { target: 'local' as const, label: 'Repositório local', icon: FolderGit2, hint: 'Escopo local persistido para continuidade.' },
+                  ]).map((option) => {
+                    const Icon = option.icon
+                    return (
+                      <button
+                        key={option.target}
+                        type="button"
+                        aria-pressed={workTarget === option.target}
+                        onClick={() => {
+                          setWorkTarget(option.target)
+                          setApplyPlan(null)
+                        }}
+                        className={`rounded-xl border p-3 text-left transition-colors ${
+                          workTarget === option.target
+                            ? 'border-[rgba(15,118,110,0.45)] bg-[rgba(15,118,110,0.1)] text-[var(--v2-ink-strong)]'
+                            : 'border-[var(--v2-line-soft)] bg-white/70 text-[var(--v2-ink-soft)] hover:border-[var(--v2-line-strong)]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 text-sm font-semibold">
+                          <Icon className="h-4 w-4" /> {option.label}
+                        </span>
+                        <span className="mt-1 block text-[11px] leading-4">{option.hint}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {workTarget === 'github' ? (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_1fr_120px]">
+                    <div>
+                      <label htmlFor="workspace-owner" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Owner</label>
+                      <input
+                        id="workspace-owner"
+                        value={repoOwner}
+                        onChange={(event) => {
+                          setRepoOwner(event.target.value)
+                          setApplyPlan(null)
+                        }}
+                        placeholder="org ou usuário"
+                        aria-label="Owner do repositório de trabalho"
+                        className="v2-field mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="workspace-repo" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Repositório</label>
+                      <input
+                        id="workspace-repo"
+                        value={repoName}
+                        onChange={(event) => {
+                          setRepoName(event.target.value)
+                          setApplyPlan(null)
+                        }}
+                        placeholder="nome-do-repo"
+                        aria-label="Nome do repositório de trabalho"
+                        className="v2-field mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="workspace-base" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Branch</label>
+                      <input
+                        id="workspace-base"
+                        value={baseBranch}
+                        onChange={(event) => {
+                          setBaseBranch(event.target.value)
+                          setApplyPlan(null)
+                        }}
+                        placeholder="main"
+                        aria-label="Branch base do trabalho"
+                        className="v2-field mt-1"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4">
+                    <label htmlFor="workspace-local-path" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">
+                      Caminho local do repositório
+                    </label>
+                    <input
+                      id="workspace-local-path"
+                      value={localRepoPath}
+                      onChange={(event) => setLocalRepoPath(event.target.value)}
+                      placeholder="/caminho/para/meu-repositorio"
+                      aria-label="Caminho local do repositório de trabalho"
+                      className="v2-field mt-1"
+                    />
+                    <p className="mt-1 text-[11px] text-[var(--v2-ink-faint)]">
+                      No navegador, o caminho é contexto persistido. Escrita local automática depende de runtime desktop/sidecar.
+                    </p>
+                  </div>
+                )}
+
+                {!hasWorkspaceTarget && (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Informe o repositório para liberar o chat e a geração.
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-[var(--v2-line-soft)] bg-white/70 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">2 · Direção criativa</p>
+                <h2 className="mt-1 text-base font-semibold text-[var(--v2-ink-strong)]">Briefing, artefato e tema</h2>
+
+                <label className="mt-4 block text-xs font-semibold uppercase tracking-wider text-[var(--v2-ink-faint)]">Tipo de artefato</label>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {DESIGN_ARTIFACT_KINDS.map((entry) => (
+                    <button
+                      key={entry.kind}
+                      type="button"
+                      aria-pressed={entry.kind === kind}
+                      onClick={() => setKind(entry.kind)}
+                      className={`rounded-xl border px-3 py-2 text-left text-xs font-medium transition-colors ${
+                        entry.kind === kind
+                          ? 'border-[rgba(15,118,110,0.4)] bg-[rgba(15,118,110,0.1)] text-[var(--v2-ink-strong)]'
+                          : 'border-[var(--v2-line-soft)] bg-white/70 text-[var(--v2-ink-soft)] hover:border-[var(--v2-line-strong)]'
+                      }`}
+                    >
+                      {entry.label}
+                    </button>
+                  ))}
+                </div>
+                {activeKindMeta && (
+                  <p className="mt-2 text-xs leading-5 text-[var(--v2-ink-soft)]">{activeKindMeta.description}</p>
+                )}
+
+                <label htmlFor="design-theme" className="mt-4 block text-xs font-semibold uppercase tracking-wider text-[var(--v2-ink-faint)]">
+                  Tema
+                </label>
+                <select
+                  id="design-theme"
+                  value={theme}
+                  onChange={(event) => {
+                    const nextTheme = event.target.value as DesignThemeId
+                    setTheme(nextTheme)
+                    updateSpec({ theme: nextTheme })
                   }}
-                  className={`rounded-xl border p-3 text-left transition-colors ${
-                    workTarget === option.target
-                      ? 'border-[rgba(15,118,110,0.45)] bg-[rgba(15,118,110,0.1)] text-[var(--v2-ink-strong)]'
-                      : 'border-[var(--v2-line-soft)] bg-white/70 text-[var(--v2-ink-soft)] hover:border-[var(--v2-line-strong)]'
-                  }`}
+                  aria-label="Tema do design"
+                  className="v2-field mt-2"
                 >
-                  <span className="flex items-center gap-2 text-sm font-semibold">
-                    <Icon className="h-4 w-4" /> {option.label}
-                  </span>
-                  <span className="mt-1 block text-[11px] leading-4">{option.hint}</span>
+                  {DESIGN_THEMES.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.label} — {entry.description}
+                    </option>
+                  ))}
+                </select>
+
+                <textarea
+                  value={brief}
+                  onChange={(event) => setBrief(event.target.value)}
+                  onKeyDown={(event) => {
+                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                      event.preventDefault()
+                      generate()
+                    }
+                  }}
+                  rows={4}
+                  placeholder="Opcional: landing page para um escritório trabalhista, com hero, diferenciais e chamada para agendamento…"
+                  aria-label="Briefing do design"
+                  className="v2-field mt-3 resize-none"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => generate()}
+                  disabled={!canGenerate}
+                  className="v2-btn-primary mt-3 w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {generating ? 'Gerando…' : 'Gerar design/código'}
                 </button>
-              )
-            })}
-          </div>
-
-          {workTarget === 'github' ? (
-            <div className="grid gap-2 sm:grid-cols-[1fr_1fr_120px]">
-              <div>
-                <label htmlFor="workspace-owner" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Owner</label>
-                <input
-                  id="workspace-owner"
-                  value={repoOwner}
-                  onChange={(event) => {
-                    setRepoOwner(event.target.value)
-                    setApplyPlan(null)
-                  }}
-                  placeholder="org ou usuário"
-                  aria-label="Owner do repositório de trabalho"
-                  className="v2-field mt-1"
-                />
+                <p className="mt-2 text-[11px] text-[var(--v2-ink-faint)]">
+                  ⌘/Ctrl + Enter gera · briefing, modelos e padrões são facultativos
+                </p>
               </div>
-              <div>
-                <label htmlFor="workspace-repo" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Repositório</label>
-                <input
-                  id="workspace-repo"
-                  value={repoName}
-                  onChange={(event) => {
-                    setRepoName(event.target.value)
-                    setApplyPlan(null)
-                  }}
-                  placeholder="nome-do-repo"
-                  aria-label="Nome do repositório de trabalho"
-                  className="v2-field mt-1"
-                />
-              </div>
-              <div>
-                <label htmlFor="workspace-base" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Branch</label>
-                <input
-                  id="workspace-base"
-                  value={baseBranch}
-                  onChange={(event) => {
-                    setBaseBranch(event.target.value)
-                    setApplyPlan(null)
-                  }}
-                  placeholder="main"
-                  aria-label="Branch base do trabalho"
-                  className="v2-field mt-1"
-                />
-              </div>
-            </div>
-          ) : (
-            <div>
-              <label htmlFor="workspace-local-path" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">
-                Caminho local do repositório
-              </label>
-              <input
-                id="workspace-local-path"
-                value={localRepoPath}
-                onChange={(event) => setLocalRepoPath(event.target.value)}
-                placeholder="/caminho/para/meu-repositorio"
-                aria-label="Caminho local do repositório de trabalho"
-                className="v2-field mt-1"
-              />
-              <p className="mt-1 text-[11px] text-[var(--v2-ink-faint)]">
-                No navegador, o caminho é usado como contexto persistido. A aplicação automática em arquivos locais depende de runtime desktop/sidecar.
-              </p>
-            </div>
-          )}
 
-          {!hasWorkspaceTarget && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Informe o repositório para liberar o chat e a geração.
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-xl border border-[var(--v2-line-soft)] bg-white/70 p-3">
-          <div className="flex items-center gap-2">
-            <History className="h-4 w-4 text-[var(--v2-accent-strong)]" />
-            <h3 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Trabalhos recentes</h3>
-          </div>
-          {recentWorkspaces.length === 0 ? (
-            <p className="mt-3 text-xs leading-5 text-[var(--v2-ink-soft)]">
-              Nenhum trabalho salvo ainda. Assim que você indicar um repositório ou conversar, ele aparece aqui.
-            </p>
-          ) : (
-            <ul className="mt-3 max-h-48 space-y-2 overflow-auto">
-              {recentWorkspaces.map((workspace) => (
-                <li key={workspace.id}>
+              <div className="rounded-2xl border border-[var(--v2-line-soft)] bg-white/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Templates</p>
+                    <h3 className="mt-1 text-base font-semibold text-[var(--v2-ink-strong)]">Modelos e padrões</h3>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => resumeWorkspace(workspace)}
-                    className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                      workspace.id === workspaceId
-                        ? 'border-[rgba(15,118,110,0.4)] bg-[rgba(15,118,110,0.08)]'
-                        : 'border-[var(--v2-line-soft)] bg-white hover:border-[var(--v2-line-strong)]'
-                    }`}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-1 rounded-full border border-[var(--v2-line-soft)] bg-white/70 px-2.5 py-1 text-[11px] font-medium text-[var(--v2-ink-soft)] transition-colors hover:border-[var(--v2-line-strong)]"
                   >
-                    <span className="block truncate text-sm font-medium text-[var(--v2-ink-strong)]">{workspace.name}</span>
-                    <span className="block truncate text-[11px] text-[var(--v2-ink-faint)]">
-                      {workspace.repository.target === 'local'
-                        ? workspace.repository.localPath || 'local'
-                        : `${workspace.repository.owner || 'owner'}/${workspace.repository.repo || 'repo'}`}
-                    </span>
+                    <Upload className="h-3 w-3" /> Importar
                   </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    aria-label="Importar template de design"
+                    className="hidden"
+                    onChange={handleImportFile}
+                  />
+                </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)_minmax(0,320px)]">
-        {/* Left — brief composer + templates */}
-        <section className="flex flex-col gap-4">
-          <div className="v2-panel flex flex-col gap-3 p-5">
-            <div className="flex items-center gap-2">
-              <MessageCircle className="h-4 w-4 text-[var(--v2-accent-strong)]" />
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Chat com orquestrador</p>
-                <h2 className="text-base font-semibold text-[var(--v2-ink-strong)]">Explique o que quer criar</h2>
+                <ul className="mt-3 flex max-h-56 flex-col gap-2 overflow-auto">
+                  {templates.map((template) => (
+                    <li
+                      key={template.id}
+                      className="flex items-center justify-between gap-2 rounded-xl border border-[var(--v2-line-soft)] bg-white/70 px-3 py-2"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => applyTemplate(template)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <span className="block truncate text-sm font-medium text-[var(--v2-ink-strong)]">{template.name}</span>
+                        <span className="block truncate text-[11px] text-[var(--v2-ink-faint)]">
+                          {template.spec.kind} · {template.builtIn ? 'padrão' : 'meu template'}
+                        </span>
+                      </button>
+                      {!template.builtIn && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTemplate(template)}
+                          aria-label={`Remover template ${template.name}`}
+                          className="rounded-lg p-1.5 text-[var(--v2-ink-faint)] transition-colors hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    value={templateName}
+                    onChange={(event) => setTemplateName(event.target.value)}
+                    placeholder="Nome do template"
+                    aria-label="Nome do template"
+                    className="v2-field flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveTemplate}
+                    disabled={!spec}
+                    className="v2-btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Save className="h-4 w-4" /> Salvar
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[var(--v2-line-soft)] bg-white/70 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Saída e entrega</p>
+                <h3 className="mt-1 text-base font-semibold text-[var(--v2-ink-strong)]">Editar, exportar e publicar</h3>
+
+                {spec ? (
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <label htmlFor="design-title" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Título</label>
+                      <input
+                        id="design-title"
+                        value={spec.title}
+                        onChange={(event) => updateSpec({ title: event.target.value })}
+                        aria-label="Título do design"
+                        className="v2-field mt-1"
+                      />
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <button type="button" onClick={() => handleExport('html')} disabled={!spec} className="v2-btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50">
+                        <Download className="h-4 w-4" /> Exportar HTML
+                      </button>
+                      <button type="button" onClick={() => handleExport('json')} disabled={!spec} className="v2-btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50">
+                        <FileJson className="h-4 w-4" /> Exportar template (JSON)
+                      </button>
+                      <button type="button" onClick={() => handleExport('markdown')} disabled={!spec} className="v2-btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50">
+                        <FileText className="h-4 w-4" /> Exportar Markdown
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs leading-5 text-[var(--v2-ink-soft)]">
+                    Gere um design para editar, exportar e preparar a entrega.
+                  </p>
+                )}
+
+                <div className="mt-4 rounded-xl border border-[var(--v2-line-soft)] bg-[rgba(15,23,42,0.02)] p-3">
+                  <div className="flex items-center gap-2">
+                    <Github className="h-4 w-4 text-[var(--v2-ink-strong)]" />
+                    <h4 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Entrega no escopo selecionado</h4>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
+                    Publica em <strong>{workspaceLabel}</strong>, sempre em nova branch e nunca diretamente em main/master.
+                  </p>
+
+                  {workTarget === 'local' ? (
+                    <p className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
+                      O contexto local fica salvo; commits automáticos locais exigem runtime desktop/sidecar.
+                    </p>
+                  ) : !githubEnabled ? (
+                    <p className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
+                      Ative o sinalizador <code>FF_CHAT_GITHUB</code> para conectar um repositório.
+                    </p>
+                  ) : ghConfigLoaded && !hasToken ? (
+                    <p className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
+                      Nenhum token configurado. Adicione um token (PAT) em Configurações → Conector GitHub para publicar.
+                    </p>
+                  ) : (
+                    <div className="mt-3 space-y-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label htmlFor="apply-dir" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Pasta de destino</label>
+                          <input
+                            id="apply-dir"
+                            value={targetDir}
+                            onChange={(event) => {
+                              setTargetDir(event.target.value)
+                              setApplyPlan(null)
+                            }}
+                            placeholder="design"
+                            aria-label="Pasta de destino"
+                            className="v2-field mt-1"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="apply-message" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Commit</label>
+                          <input
+                            id="apply-message"
+                            value={commitMessage}
+                            onChange={(event) => setCommitMessage(event.target.value)}
+                            placeholder={spec ? `Design Studio: ${spec.title} (${spec.kind})` : 'Design Studio: …'}
+                            aria-label="Mensagem do commit"
+                            className="v2-field mt-1"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Arquivos</span>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {DESIGN_APPLY_FORMATS.map((format) => (
+                            <button
+                              key={format}
+                              type="button"
+                              aria-pressed={applyFormats.includes(format)}
+                              onClick={() => toggleApplyFormat(format)}
+                              className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                                applyFormats.includes(format)
+                                  ? 'border-[rgba(15,118,110,0.4)] bg-[rgba(15,118,110,0.1)] text-[var(--v2-ink-strong)]'
+                                  : 'border-[var(--v2-line-soft)] bg-white/70 text-[var(--v2-ink-soft)] hover:border-[var(--v2-line-strong)]'
+                              }`}
+                            >
+                              {APPLY_FORMAT_LABELS[format]}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <label className="flex items-center gap-2 text-xs text-[var(--v2-ink-soft)]">
+                        <input
+                          type="checkbox"
+                          checked={openPr}
+                          onChange={(event) => {
+                            setOpenPr(event.target.checked)
+                            setApplyPlan(null)
+                          }}
+                          aria-label="Abrir pull request"
+                        />
+                        Abrir pull request para {baseBranch.trim() || 'a branch base'}
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={handleApply}
+                        disabled={!canApply}
+                        className="v2-btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Github className="h-4 w-4" />}
+                        {applying ? 'Publicando…' : agentMode === 'plan' ? 'Planejar publicação' : 'Publicar no repositório'}
+                      </button>
+                      {!spec && <p className="text-[11px] text-[var(--v2-ink-faint)]">Gere um design para habilitar a publicação.</p>}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="max-h-72 space-y-2 overflow-auto rounded-xl border border-[var(--v2-line-soft)] bg-white/70 p-3">
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="rounded-2xl border border-[var(--v2-line-soft)] bg-white/70 p-4">
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4 text-[var(--v2-accent-strong)]" />
+                  <h3 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Trabalhos recentes</h3>
+                </div>
+                {recentWorkspaces.length === 0 ? (
+                  <p className="mt-3 text-xs leading-5 text-[var(--v2-ink-soft)]">
+                    Nenhum trabalho salvo ainda. Assim que você indicar um repositório ou conversar, ele aparece aqui.
+                  </p>
+                ) : (
+                  <ul className="mt-3 grid max-h-44 gap-2 overflow-auto sm:grid-cols-2">
+                    {recentWorkspaces.map((workspace) => (
+                      <li key={workspace.id}>
+                        <button
+                          type="button"
+                          onClick={() => resumeWorkspace(workspace)}
+                          className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                            workspace.id === workspaceId
+                              ? 'border-[rgba(15,118,110,0.4)] bg-[rgba(15,118,110,0.08)]'
+                              : 'border-[var(--v2-line-soft)] bg-white hover:border-[var(--v2-line-strong)]'
+                          }`}
+                        >
+                          <span className="block truncate text-sm font-medium text-[var(--v2-ink-strong)]">{workspace.name}</span>
+                          <span className="block truncate text-[11px] text-[var(--v2-ink-faint)]">
+                            {workspace.repository.target === 'local'
+                              ? workspace.repository.localPath || 'local'
+                              : `${workspace.repository.owner || 'owner'}/${workspace.repository.repo || 'repo'}`}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-[var(--v2-line-soft)] bg-white/70 p-4">
+                <div className="flex items-center gap-2">
+                  <Settings2 className="h-4 w-4 text-[var(--v2-accent-strong)]" />
+                  <h3 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Ferramentas de referência</h3>
+                </div>
+                <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {OPEN_TOOL_REFERENCES.slice(0, 4).map((tool) => (
+                    <li key={tool.href} className="rounded-xl border border-[var(--v2-line-soft)] bg-white/70 px-3 py-2">
+                      <a href={tool.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--v2-ink-strong)] hover:underline">
+                        {tool.name} <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <p className="mt-1 text-[11px] leading-4 text-[var(--v2-ink-soft)]">{tool.note}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+        <section className="v2-panel flex min-h-[64vh] flex-col overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[var(--v2-line-soft)] px-5 py-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Resultado / visualização / amostra</p>
+              <div className="mt-1 flex items-center gap-2 text-sm font-semibold text-[var(--v2-ink-strong)]">
+                <Layers className="h-4 w-4 text-[var(--v2-accent-strong)]" /> Canvas principal
+              </div>
+            </div>
+            {spec && (
+              <button
+                type="button"
+                onClick={() => generate()}
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--v2-line-soft)] bg-white/70 px-2.5 py-1 text-[11px] font-medium text-[var(--v2-ink-soft)] transition-colors hover:border-[var(--v2-line-strong)]"
+              >
+                <RefreshCcw className="h-3 w-3" /> Regerar
+              </button>
+            )}
+          </div>
+          <div className="flex-1 bg-[rgba(15,23,42,0.03)] p-4">
+            {preview ? (
+              <iframe
+                title="Amostra do design"
+                sandbox="allow-same-origin"
+                srcDoc={preview}
+                className="h-full min-h-[56vh] w-full rounded-xl border border-[var(--v2-line-soft)] bg-white shadow-sm"
+              />
+            ) : (
+              <div className="flex h-full min-h-[56vh] flex-col items-center justify-center rounded-xl border border-dashed border-[var(--v2-line-soft)] bg-white/70 text-center text-[var(--v2-ink-soft)]">
+                <Palette className="h-10 w-10 text-[var(--v2-accent-strong)]" />
+                <p className="mt-4 max-w-sm text-sm leading-6">
+                  Defina o repositório e use a barra de chat para criar. A amostra aparece aqui limpa, pronta para revisar, exportar ou publicar.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <aside className="space-y-4">
+          <section className="v2-panel p-5">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-[var(--v2-accent-strong)]" />
+              <h3 className="text-base font-semibold text-[var(--v2-ink-strong)]">Histórico do chat</h3>
+            </div>
+            <div className="mt-3 max-h-[42vh] space-y-2 overflow-auto rounded-xl border border-[var(--v2-line-soft)] bg-white/70 p-3">
               {messages.map((message) => (
                 <div
                   key={message.id}
@@ -725,592 +1085,101 @@ export default function DesignStudio() {
                 </div>
               ))}
             </div>
-            <div className="flex gap-2">
-              <textarea
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                    event.preventDefault()
-                    handleSendChat()
-                  }
-                }}
-                rows={3}
-                disabled={!hasWorkspaceTarget}
-                placeholder={hasWorkspaceTarget ? 'Quero criar um app/site/fluxo com…' : 'Informe o repositório acima para iniciar'}
-                aria-label="Mensagem para o orquestrador"
-                className="v2-field resize-none disabled:cursor-not-allowed disabled:opacity-60"
-              />
-              <button
-                type="button"
-                onClick={handleSendChat}
-                disabled={!hasWorkspaceTarget || !chatInput.trim()}
-                aria-label="Enviar mensagem ao orquestrador"
-                className="v2-btn-primary self-stretch justify-center px-3 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Send className="h-4 w-4" />
-              </button>
-            </div>
-            <p className="text-[11px] text-[var(--v2-ink-faint)]">
-              O chat salva contexto e pode seguir por trabalhos prolongados, retomando pelo painel de recentes.
-            </p>
-          </div>
+          </section>
 
-          <div className="v2-panel flex flex-col gap-4 p-5">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Briefing opcional</p>
-              <h2 className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">Se preferir, gere direto</h2>
-            </div>
-
-            <label className="text-xs font-semibold uppercase tracking-wider text-[var(--v2-ink-faint)]">Tipo de artefato</label>
-            <div className="grid grid-cols-2 gap-2">
-              {DESIGN_ARTIFACT_KINDS.map((entry) => (
-                <button
-                  key={entry.kind}
-                  type="button"
-                  aria-pressed={entry.kind === kind}
-                  onClick={() => setKind(entry.kind)}
-                  className={`rounded-xl border px-3 py-2 text-left text-xs font-medium transition-colors ${
-                    entry.kind === kind
-                      ? 'border-[rgba(15,118,110,0.4)] bg-[rgba(15,118,110,0.1)] text-[var(--v2-ink-strong)]'
-                      : 'border-[var(--v2-line-soft)] bg-white/70 text-[var(--v2-ink-soft)] hover:border-[var(--v2-line-strong)]'
-                  }`}
-                >
-                  {entry.label}
-                </button>
-              ))}
-            </div>
-            {activeKindMeta && (
-              <p className="text-xs leading-5 text-[var(--v2-ink-soft)]">{activeKindMeta.description}</p>
-            )}
-
-            <label htmlFor="design-theme" className="text-xs font-semibold uppercase tracking-wider text-[var(--v2-ink-faint)]">
-              Tema
-            </label>
-            <select
-              id="design-theme"
-              value={theme}
-              onChange={(event) => {
-                const nextTheme = event.target.value as DesignThemeId
-                setTheme(nextTheme)
-                updateSpec({ theme: nextTheme })
-              }}
-              aria-label="Tema do design"
-              className="v2-field"
-            >
-              {DESIGN_THEMES.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label} — {entry.description}
-                </option>
-              ))}
-            </select>
-
-            <textarea
-              value={brief}
-              onChange={(event) => setBrief(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                  event.preventDefault()
-                  generate()
-                }
-              }}
-              rows={6}
-              placeholder="Opcional: landing page para um escritório trabalhista, com hero, três diferenciais e chamada para agendamento…"
-              aria-label="Briefing do design"
-              className="v2-field resize-none"
-            />
-
-            <button
-              type="button"
-              onClick={() => generate()}
-              disabled={!canGenerate}
-              className="v2-btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {generating ? 'Gerando…' : 'Gerar design/código'}
-            </button>
-            <p className="text-[11px] text-[var(--v2-ink-faint)]">
-              ⌘/Ctrl + Enter gera · briefing, modelos e padrões são facultativos
-            </p>
-          </div>
-
-          {/* Templates gallery */}
-          <div className="v2-panel flex flex-col gap-3 p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Templates</p>
-                <h3 className="mt-1 text-base font-semibold text-[var(--v2-ink-strong)]">Modelos e padrões</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1 rounded-full border border-[var(--v2-line-soft)] bg-white/70 px-2.5 py-1 text-[11px] font-medium text-[var(--v2-ink-soft)] transition-colors hover:border-[var(--v2-line-strong)]"
-              >
-                <Upload className="h-3 w-3" /> Importar
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json,application/json"
-                aria-label="Importar template de design"
-                className="hidden"
-                onChange={handleImportFile}
-              />
-            </div>
-
-            <ul className="flex max-h-64 flex-col gap-2 overflow-auto">
-              {templates.map((template) => (
-                <li
-                  key={template.id}
-                  className="flex items-center justify-between gap-2 rounded-xl border border-[var(--v2-line-soft)] bg-white/70 px-3 py-2"
-                >
-                  <button
-                    type="button"
-                    onClick={() => applyTemplate(template)}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <span className="block truncate text-sm font-medium text-[var(--v2-ink-strong)]">{template.name}</span>
-                    <span className="block truncate text-[11px] text-[var(--v2-ink-faint)]">
-                      {template.spec.kind} · {template.builtIn ? 'padrão' : 'meu template'}
-                    </span>
-                  </button>
-                  {!template.builtIn && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteTemplate(template)}
-                      aria-label={`Remover template ${template.name}`}
-                      className="rounded-lg p-1.5 text-[var(--v2-ink-faint)] transition-colors hover:bg-rose-50 hover:text-rose-600"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
+          {(applyPlan || applyResult || applyError) && (
+            <section className="v2-panel p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Resultado da entrega</p>
+              {applyPlan && (
+                <div className="mt-3 rounded-xl border border-[var(--v2-line-soft)] bg-white/70 p-3 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
+                  <p className="font-semibold text-[var(--v2-ink-strong)]">
+                    {agentMode === 'plan' ? 'Plano da publicação' : 'Confirme a publicação'}
+                  </p>
+                  <p className="mt-1">
+                    Repositório <strong>{applyPlan.owner}/{applyPlan.repo}</strong> · nova branch{' '}
+                    <strong>{applyPlan.branch}</strong> a partir de <strong>{applyPlan.baseBranch}</strong>.
+                  </p>
+                  <ul className="mt-1 list-disc pl-4">
+                    {applyPlan.files.map((file) => <li key={file} className="break-all">{file}</li>)}
+                  </ul>
+                  <p className="mt-1">
+                    Commit: “{applyPlan.commitMessage}”. {applyPlan.openPr ? 'Abre um pull request.' : 'Sem pull request.'}
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button type="button" onClick={() => void runApply()} disabled={applying} className="v2-btn-primary justify-center px-3 py-1.5 text-[11px] disabled:cursor-not-allowed disabled:opacity-50">
+                      {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitPullRequest className="h-3.5 w-3.5" />}
+                      Publicar agora
                     </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            <div className="flex items-center gap-2">
-              <input
-                value={templateName}
-                onChange={(event) => setTemplateName(event.target.value)}
-                placeholder="Nome do template"
-                aria-label="Nome do template"
-                className="v2-field flex-1"
-              />
-              <button
-                type="button"
-                onClick={handleSaveTemplate}
-                disabled={!spec}
-                className="v2-btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Save className="h-4 w-4" /> Salvar
-              </button>
-            </div>
-          </div>
-
-          <div className="v2-panel flex flex-col gap-3 p-5">
-            <div className="flex items-center gap-2">
-              <Settings2 className="h-4 w-4 text-[var(--v2-accent-strong)]" />
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Ferramentas abertas</p>
-                <h3 className="text-base font-semibold text-[var(--v2-ink-strong)]">Inspirações do fluxo</h3>
-              </div>
-            </div>
-            <ul className="space-y-2">
-              {OPEN_TOOL_REFERENCES.map((tool) => (
-                <li key={tool.href} className="rounded-xl border border-[var(--v2-line-soft)] bg-white/70 px-3 py-2">
-                  <a
-                    href={tool.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--v2-ink-strong)] hover:underline"
-                  >
-                    {tool.name} <ExternalLink className="h-3 w-3" />
-                  </a>
-                  <p className="mt-1 text-[11px] leading-4 text-[var(--v2-ink-soft)]">{tool.note}</p>
-                </li>
-              ))}
-            </ul>
-            <p className="text-[11px] leading-5 text-[var(--v2-ink-faint)]">
-              AIOLI não aparece como projeto aberto amplamente estabelecido; por isso o catálogo inclui alternativas consolidadas para agentes de desenvolvimento.
-            </p>
-          </div>
-        </section>
-
-        {/* Center — live preview canvas */}
-        <section className="v2-panel flex min-h-[60vh] flex-col overflow-hidden">
-          <div className="flex items-center justify-between border-b border-[var(--v2-line-soft)] px-5 py-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--v2-ink-strong)]">
-              <Layers className="h-4 w-4 text-[var(--v2-accent-strong)]" />
-              Amostra ao vivo
-            </div>
-            {spec && (
-              <button
-                type="button"
-                onClick={() => generate()}
-                className="inline-flex items-center gap-1 rounded-full border border-[var(--v2-line-soft)] bg-white/70 px-2.5 py-1 text-[11px] font-medium text-[var(--v2-ink-soft)] transition-colors hover:border-[var(--v2-line-strong)]"
-              >
-                <RefreshCcw className="h-3 w-3" /> Regerar do briefing
-              </button>
-            )}
-          </div>
-          <div className="flex-1 bg-[rgba(15,23,42,0.03)] p-4">
-            {preview ? (
-              <iframe
-                title="Amostra do design"
-                sandbox="allow-same-origin"
-                srcDoc={preview}
-                className="h-full min-h-[52vh] w-full rounded-xl border border-[var(--v2-line-soft)] bg-white"
-              />
-            ) : (
-              <div className="flex h-full min-h-[52vh] flex-col items-center justify-center text-center text-[var(--v2-ink-soft)]">
-                <Palette className="h-10 w-10 text-[var(--v2-accent-strong)]" />
-                <p className="mt-4 max-w-sm text-sm leading-6">
-                  Descreva seu design e clique em <strong>Gerar design</strong>. A amostra aparece aqui,
-                  pronta para editar, exportar ou aplicar em um repositório conectado.
-                </p>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Right — manual editor + exports + repo binding */}
-        <aside className="space-y-4">
-          <section className="v2-panel p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Edição manual</p>
-            <h3 className="mt-2 text-base font-semibold text-[var(--v2-ink-strong)]">Ajuste o conteúdo</h3>
-            {spec ? (
-              <div className="mt-3 space-y-3">
-                <div>
-                  <label htmlFor="design-title" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Título</label>
-                  <input
-                    id="design-title"
-                    value={spec.title}
-                    onChange={(event) => updateSpec({ title: event.target.value })}
-                    aria-label="Título do design"
-                    className="v2-field mt-1"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <span className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Seções</span>
-                  {spec.points.map((point, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <input
-                        value={point}
-                        onChange={(event) => updatePoint(index, event.target.value)}
-                        aria-label={`Seção ${index + 1}`}
-                        className="v2-field flex-1"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removePoint(index)}
-                        aria-label={`Remover seção ${index + 1}`}
-                        className="rounded-lg p-1.5 text-[var(--v2-ink-faint)] transition-colors hover:bg-rose-50 hover:text-rose-600"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={addPoint}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-[var(--v2-accent-strong)] hover:underline"
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Adicionar seção
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p className="mt-2 text-xs leading-5 text-[var(--v2-ink-soft)]">
-                Gere um design para editar título e seções manualmente. As mudanças aparecem na amostra ao vivo.
-              </p>
-            )}
-          </section>
-
-          <section className="v2-panel p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Exportar</p>
-            <h3 className="mt-2 text-base font-semibold text-[var(--v2-ink-strong)]">Arquivos do design</h3>
-            <p className="mt-2 text-xs leading-5 text-[var(--v2-ink-soft)]">
-              HTML autossuficiente para abrir no navegador, JSON de template para reimportar aqui ou em outras ferramentas,
-              e Markdown para documentos e wikis.
-            </p>
-            <div className="mt-3 grid gap-2">
-              <button
-                type="button"
-                onClick={() => handleExport('html')}
-                disabled={!spec}
-                className="v2-btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Download className="h-4 w-4" /> Exportar HTML
-              </button>
-              <button
-                type="button"
-                onClick={() => handleExport('json')}
-                disabled={!spec}
-                className="v2-btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <FileJson className="h-4 w-4" /> Exportar template (JSON)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleExport('markdown')}
-                disabled={!spec}
-                className="v2-btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <FileText className="h-4 w-4" /> Exportar Markdown
-              </button>
-            </div>
-          </section>
-
-          <section className="v2-panel p-5">
-            <div className="flex items-center gap-2">
-              <Github className="h-4 w-4 text-[var(--v2-ink-strong)]" />
-              <h3 className="text-base font-semibold text-[var(--v2-ink-strong)]">Aplicar em repositório</h3>
-            </div>
-            <p className="mt-2 text-xs leading-5 text-[var(--v2-ink-soft)]">
-              Envie o design gerado direto para um repositório conectado (mesmo conector GitHub do chat).
-              O envio cria sempre uma nova branch — nunca escreve em main/master — e pode abrir um pull request.
-            </p>
-
-            {workTarget === 'local' ? (
-              <p className="mt-3 rounded-lg bg-[rgba(15,23,42,0.04)] px-3 py-2 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
-                Trabalho local selecionado em <strong>{localRepoPath || 'caminho não informado'}</strong>. O contexto fica salvo para continuidade;
-                commits automáticos em arquivos locais exigem runtime desktop/sidecar. Para abrir branch e PR agora, altere o escopo para GitHub.
-              </p>
-            ) : !githubEnabled ? (
-              <p className="mt-3 rounded-lg bg-[rgba(15,23,42,0.04)] px-3 py-2 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
-                Ative o sinalizador <code>FF_CHAT_GITHUB</code> para conectar um repositório.
-              </p>
-            ) : ghConfigLoaded && !hasToken ? (
-              <p className="mt-3 rounded-lg bg-[rgba(15,23,42,0.04)] px-3 py-2 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
-                Nenhum token configurado. Adicione um token (PAT) em Configurações → Conector GitHub para aplicar.
-              </p>
-            ) : (
-              <div className="mt-4 space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label htmlFor="apply-owner" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Owner</label>
-                    <input
-                      id="apply-owner"
-                      value={repoOwner}
-                      onChange={(event) => {
-                        setRepoOwner(event.target.value)
-                        setApplyPlan(null)
-                      }}
-                      placeholder="org ou usuário"
-                      aria-label="Proprietário do repositório"
-                      className="v2-field mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="apply-repo" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Repositório</label>
-                    <input
-                      id="apply-repo"
-                      value={repoName}
-                      onChange={(event) => {
-                        setRepoName(event.target.value)
-                        setApplyPlan(null)
-                      }}
-                      placeholder="nome-do-repo"
-                      aria-label="Nome do repositório"
-                      className="v2-field mt-1"
-                    />
+                    <button type="button" onClick={() => setApplyPlan(null)} className="v2-btn-secondary justify-center px-3 py-1.5 text-[11px]">
+                      Cancelar
+                    </button>
                   </div>
                 </div>
+              )}
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label htmlFor="apply-base" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Branch base</label>
-                    <input
-                      id="apply-base"
-                      value={baseBranch}
-                      onChange={(event) => {
-                        setBaseBranch(event.target.value)
-                        setApplyPlan(null)
-                      }}
-                      placeholder="main"
-                      aria-label="Branch base"
-                      className="v2-field mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="apply-dir" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Pasta de destino</label>
-                    <input
-                      id="apply-dir"
-                      value={targetDir}
-                      onChange={(event) => {
-                        setTargetDir(event.target.value)
-                        setApplyPlan(null)
-                      }}
-                      placeholder="design"
-                      aria-label="Pasta de destino"
-                      className="v2-field mt-1"
-                    />
+              {applyResult && (
+                <div className="mt-3 rounded-xl border border-[rgba(15,118,110,0.3)] bg-[rgba(15,118,110,0.08)] p-3 text-[11px] leading-5 text-[var(--v2-accent-strong)]">
+                  <p className="font-semibold">Design aplicado em {applyResult.branch}.</p>
+                  <div className="mt-1 flex flex-col gap-1">
+                    {applyResult.commitUrl && (
+                      <a href={applyResult.commitUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline">
+                        <ExternalLink className="h-3 w-3" /> Ver commit
+                      </a>
+                    )}
+                    {applyResult.prUrl && (
+                      <a href={applyResult.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline">
+                        <ExternalLink className="h-3 w-3" /> Ver pull request #{applyResult.prNumber}
+                      </a>
+                    )}
                   </div>
                 </div>
+              )}
 
-                <div>
-                  <label htmlFor="apply-message" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Mensagem do commit (opcional)</label>
-                  <input
-                    id="apply-message"
-                    value={commitMessage}
-                    onChange={(event) => setCommitMessage(event.target.value)}
-                    placeholder={spec ? `Design Studio: ${spec.title} (${spec.kind})` : 'Design Studio: …'}
-                    aria-label="Mensagem do commit"
-                    className="v2-field mt-1"
-                  />
+              {applyError && (
+                <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[11px] leading-5 text-rose-700">
+                  {applyError}
                 </div>
-
-                <div>
-                  <span className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Arquivos</span>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {DESIGN_APPLY_FORMATS.map((format) => (
-                      <button
-                        key={format}
-                        type="button"
-                        aria-pressed={applyFormats.includes(format)}
-                        onClick={() => toggleApplyFormat(format)}
-                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                          applyFormats.includes(format)
-                            ? 'border-[rgba(15,118,110,0.4)] bg-[rgba(15,118,110,0.1)] text-[var(--v2-ink-strong)]'
-                            : 'border-[var(--v2-line-soft)] bg-white/70 text-[var(--v2-ink-soft)] hover:border-[var(--v2-line-strong)]'
-                        }`}
-                      >
-                        {APPLY_FORMAT_LABELS[format]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-2 text-xs text-[var(--v2-ink-soft)]">
-                  <input
-                    type="checkbox"
-                    checked={openPr}
-                    onChange={(event) => {
-                      setOpenPr(event.target.checked)
-                      setApplyPlan(null)
-                    }}
-                    aria-label="Abrir pull request"
-                  />
-                  Abrir pull request para {baseBranch.trim() || 'a branch base'}
-                </label>
-
-                <div>
-                  <span className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Modo de execução</span>
-                  <div className="mt-1 grid grid-cols-3 gap-1.5">
-                    {APPLY_MODE_OPTIONS.map((option) => (
-                      <button
-                        key={option.mode}
-                        type="button"
-                        aria-pressed={applyMode === option.mode}
-                        title={option.hint}
-                        onClick={() => {
-                          setApplyMode(option.mode)
-                          setApplyPlan(null)
-                        }}
-                        className={`rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors ${
-                          applyMode === option.mode
-                            ? 'border-[rgba(15,118,110,0.4)] bg-[rgba(15,118,110,0.1)] text-[var(--v2-ink-strong)]'
-                            : 'border-[var(--v2-line-soft)] bg-white/70 text-[var(--v2-ink-soft)] hover:border-[var(--v2-line-strong)]'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleApply}
-                  disabled={!canApply}
-                  className="v2-btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Github className="h-4 w-4" />}
-                  {applying ? 'Aplicando…' : applyMode === 'plan' ? 'Planejar envio' : 'Aplicar no repositório'}
-                </button>
-                {!spec && (
-                  <p className="text-[11px] text-[var(--v2-ink-faint)]">Gere um design para habilitar o envio.</p>
-                )}
-
-                {applyPlan && (
-                  <div className="rounded-xl border border-[var(--v2-line-soft)] bg-white/70 p-3 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
-                    <p className="font-semibold text-[var(--v2-ink-strong)]">
-                      {applyMode === 'plan' ? 'Plano do envio' : 'Confirme o envio'}
-                    </p>
-                    <p className="mt-1">
-                      Repositório <strong>{applyPlan.owner}/{applyPlan.repo}</strong> · nova branch{' '}
-                      <strong>{applyPlan.branch}</strong> a partir de <strong>{applyPlan.baseBranch}</strong>.
-                    </p>
-                    <ul className="mt-1 list-disc pl-4">
-                      {applyPlan.files.map((file) => (
-                        <li key={file} className="break-all">{file}</li>
-                      ))}
-                    </ul>
-                    <p className="mt-1">
-                      Commit: “{applyPlan.commitMessage}”. {applyPlan.openPr ? 'Abre um pull request.' : 'Sem pull request.'}
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void runApply()}
-                        disabled={applying}
-                        className="v2-btn-primary justify-center px-3 py-1.5 text-[11px] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitPullRequest className="h-3.5 w-3.5" />}
-                        Aplicar agora
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setApplyPlan(null)}
-                        className="v2-btn-secondary justify-center px-3 py-1.5 text-[11px]"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {applyResult && (
-                  <div className="rounded-xl border border-[rgba(15,118,110,0.3)] bg-[rgba(15,118,110,0.08)] p-3 text-[11px] leading-5 text-[var(--v2-accent-strong)]">
-                    <p className="font-semibold">Design aplicado em {applyResult.branch}.</p>
-                    <div className="mt-1 flex flex-col gap-1">
-                      {applyResult.commitUrl && (
-                        <a
-                          href={applyResult.commitUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 underline"
-                        >
-                          <ExternalLink className="h-3 w-3" /> Ver commit
-                        </a>
-                      )}
-                      {applyResult.prUrl && (
-                        <a
-                          href={applyResult.prUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 underline"
-                        >
-                          <ExternalLink className="h-3 w-3" /> Ver pull request #{applyResult.prNumber}
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {applyError && (
-                  <div
-                    role="alert"
-                    className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-[11px] leading-5 text-rose-700"
-                  >
-                    {applyError}
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
+              )}
+            </section>
+          )}
         </aside>
       </div>
+
+      <section className="v2-panel fixed inset-x-4 bottom-4 z-20 mx-auto max-w-6xl border border-[rgba(15,118,110,0.24)] bg-white/95 p-3 shadow-2xl backdrop-blur">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Barra do chat</p>
+            <p className="text-xs text-[var(--v2-ink-soft)]">Modo de execução e comando principal sempre à mão.</p>
+          </div>
+          <AgentModePicker value={agentMode} onChange={setAgentMode} targetRepo={hasWorkspaceTarget ? workspaceLabel : undefined} />
+        </div>
+        <div className="flex gap-2">
+          <textarea
+            value={chatInput}
+            onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                event.preventDefault()
+                handleSendChat()
+              }
+            }}
+            rows={2}
+            disabled={!hasWorkspaceTarget}
+            placeholder={hasWorkspaceTarget ? 'Peça uma tela, componente, revisão UX ou ajuste de código/design…' : 'Informe o repositório nas configurações para iniciar'}
+            aria-label="Mensagem para o orquestrador"
+            className="v2-field resize-none disabled:cursor-not-allowed disabled:opacity-60"
+          />
+          <button
+            type="button"
+            onClick={handleSendChat}
+            disabled={!hasWorkspaceTarget || !chatInput.trim()}
+            aria-label="Enviar mensagem ao orquestrador"
+            className="v2-btn-primary min-w-[52px] justify-center px-3 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+        </div>
+      </section>
     </div>
   )
 }

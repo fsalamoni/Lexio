@@ -10,7 +10,7 @@ describe('AgentModePicker', () => {
   it('renders all three agent modes as segmented buttons', () => {
     render(<AgentModePicker value="ask" onChange={() => {}} />)
     expect(screen.getByRole('button', { name: 'Automático' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'Sempre perguntar' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Perguntar' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Planejar' })).toBeDefined()
   })
 
@@ -36,7 +36,7 @@ describe('AgentModePicker', () => {
 
   it('disables every control when disabled is true', () => {
     render(<AgentModePicker value="ask" onChange={() => {}} disabled />)
-    for (const label of ['Automático', 'Sempre perguntar', 'Planejar']) {
+    for (const label of ['Automático', 'Perguntar', 'Planejar']) {
       const btn = screen.getByRole('button', { name: label }) as HTMLButtonElement
       expect(btn.disabled).toBe(true)
     }
