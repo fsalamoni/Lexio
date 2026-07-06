@@ -1,17 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Bot,
+  Cloud,
+  Code2,
   Download,
   ExternalLink,
   FileJson,
   FileText,
+  FolderGit2,
   GitPullRequest,
   Github,
+  History,
   Layers,
   Loader2,
+  MessageCircle,
   Palette,
   Plus,
   RefreshCcw,
   Save,
+  Send,
+  Settings2,
   Sparkles,
   Trash2,
   Upload,
@@ -48,6 +56,18 @@ import {
   listDesignTemplates,
   saveDesignTemplate,
 } from '../../lib/design-studio/template-store'
+import {
+  createDesignStudioChatMessage,
+  createDesignWorkspace,
+  getActiveDesignWorkspaceId,
+  listDesignWorkspaces,
+  loadDesignWorkspace,
+  saveDesignWorkspace,
+  setActiveDesignWorkspaceId,
+  type DesignStudioChatMessage,
+  type DesignWorkspace,
+  type DesignWorkspaceTarget,
+} from '../../lib/design-studio/workspace-store'
 
 type ExportFormat = 'html' | 'json' | 'markdown'
 
@@ -63,6 +83,23 @@ const APPLY_FORMAT_LABELS: Record<DesignApplyFormat, string> = {
   html: 'HTML',
   json: 'Template (JSON)',
   markdown: 'Markdown',
+}
+
+const OPEN_TOOL_REFERENCES = [
+  { name: 'open-design', href: 'https://github.com/nexu-io/open-design', note: 'tokens, componentes e documentação de design system' },
+  { name: 'Mozilla Open Design', href: 'https://github.com/mozilla/OpenDesign', note: 'processo aberto de design e colaboração' },
+  { name: 'SuperDesign', href: 'https://github.com/superdesigndev/superdesign', note: 'geração visual e iteração de interface' },
+  { name: 'OpenHands', href: 'https://github.com/OpenDevin/OpenHands', note: 'ambiente agentic de desenvolvimento ponta a ponta' },
+  { name: 'SWE-agent', href: 'https://github.com/SWE-agent/SWE-agent', note: 'agente para issues reais e benchmark SWE-bench' },
+  { name: 'Aider', href: 'https://github.com/paul-gauthier/aider', note: 'par programming git-native no terminal' },
+  { name: 'Continue', href: 'https://github.com/continuedev/continue', note: 'chat e agentes dentro da IDE' },
+]
+
+function defaultOrchestratorMessage(): DesignStudioChatMessage {
+  return createDesignStudioChatMessage(
+    'orchestrator',
+    'Indique primeiro o repositório de trabalho (GitHub ou local). Depois converse comigo: briefing, modelos e padrões são opcionais; eu posso perguntar o que faltar e encadear design + desenvolvimento.',
+  )
 }
 
 function downloadFile(filename: string, contents: string, mime: string) {
@@ -102,6 +139,15 @@ export default function DesignStudio() {
   const [notice, setNotice] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
+  // ── Workspace / repository scope state ──────────────────────────────────────
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
+  const [workspaceId, setWorkspaceId] = useState('')
+  const [workTarget, setWorkTarget] = useState<DesignWorkspaceTarget>('github')
+  const [localRepoPath, setLocalRepoPath] = useState('')
+  const [recentWorkspaces, setRecentWorkspaces] = useState<DesignWorkspace[]>([])
+  const [messages, setMessages] = useState<DesignStudioChatMessage[]>(() => [defaultOrchestratorMessage()])
+  const [chatInput, setChatInput] = useState('')
+
   // ── Repository apply (connector) state ──────────────────────────────────────
   const githubEnabled = isEnabled('FF_CHAT_GITHUB')
   const [ghToken, setGhToken] = useState('')
@@ -119,10 +165,45 @@ export default function DesignStudio() {
   const [applyResult, setApplyResult] = useState<DesignApplyResult | null>(null)
   const [applyError, setApplyError] = useState<string | null>(null)
 
-  const canGenerate = brief.trim().length > 0 && !generating
+  const hasWorkspaceTarget =
+    workTarget === 'local'
+      ? localRepoPath.trim().length > 0
+      : repoOwner.trim().length > 0 && repoName.trim().length > 0
+  const canGenerate = hasWorkspaceTarget && !generating
+
+  const loadWorkspaceIntoState = (workspace: DesignWorkspace) => {
+    setWorkspaceId(workspace.id)
+    setWorkTarget(workspace.repository.target)
+    setRepoOwner(workspace.repository.owner)
+    setRepoName(workspace.repository.repo)
+    setBaseBranch(workspace.repository.baseBranch)
+    setTargetDir(workspace.repository.targetDir)
+    setLocalRepoPath(workspace.repository.localPath)
+    setBrief(workspace.brief)
+    setKind(workspace.kind)
+    setTheme(workspace.theme)
+    setTemplateName(workspace.templateName)
+    setSpec(workspace.spec)
+    setMessages(workspace.messages.length ? workspace.messages : [defaultOrchestratorMessage()])
+    setApplyPlan(null)
+    setApplyResult(null)
+    setApplyError(null)
+  }
 
   useEffect(() => {
     if (enabled) setTemplates(listDesignTemplates())
+  }, [enabled])
+
+  useEffect(() => {
+    if (!enabled) return
+    const recent = listDesignWorkspaces()
+    const activeId = getActiveDesignWorkspaceId()
+    const active = activeId ? loadDesignWorkspace(activeId) : null
+    const workspace = active || recent[0] || createDesignWorkspace({ messages: [defaultOrchestratorMessage()] })
+    setRecentWorkspaces(recent)
+    loadWorkspaceIntoState(workspace)
+    setActiveDesignWorkspaceId(workspace.id)
+    setWorkspaceLoaded(true)
   }, [enabled])
 
   useEffect(() => {
@@ -146,6 +227,53 @@ export default function DesignStudio() {
     }
   }, [enabled, githubEnabled])
 
+  useEffect(() => {
+    if (!enabled || !workspaceLoaded || !workspaceId) return
+    const handle = window.setTimeout(() => {
+      const saved = saveDesignWorkspace({
+        id: workspaceId,
+        name: spec?.title || brief.trim().slice(0, 80) || 'Novo trabalho',
+        updatedAt: new Date().toISOString(),
+        repository: {
+          target: workTarget,
+          owner: repoOwner,
+          repo: repoName,
+          baseBranch,
+          targetDir,
+          localPath: localRepoPath,
+        },
+        brief,
+        kind,
+        theme,
+        templateName,
+        spec,
+        messages,
+      })
+      if (saved) {
+        setWorkspaceId(saved.id)
+        setActiveDesignWorkspaceId(saved.id)
+        setRecentWorkspaces(listDesignWorkspaces())
+      }
+    }, 350)
+    return () => window.clearTimeout(handle)
+  }, [
+    enabled,
+    workspaceLoaded,
+    workspaceId,
+    workTarget,
+    repoOwner,
+    repoName,
+    baseBranch,
+    targetDir,
+    localRepoPath,
+    brief,
+    kind,
+    theme,
+    templateName,
+    spec,
+    messages,
+  ])
+
   const preview = useMemo(() => (spec ? renderSpec(spec) : null), [spec])
 
   const refreshTemplates = () => setTemplates(listDesignTemplates())
@@ -155,14 +283,76 @@ export default function DesignStudio() {
     window.setTimeout(() => setNotice((current) => (current === message ? null : current)), 4000)
   }
 
-  const generate = () => {
-    if (!brief.trim()) return
+  const activeKindMeta = useMemo(
+    () => DESIGN_ARTIFACT_KINDS.find((entry) => entry.kind === kind),
+    [kind],
+  )
+
+  const workspaceLabel =
+    workTarget === 'local'
+      ? localRepoPath.trim() || 'repositório local'
+      : repoOwner.trim() && repoName.trim()
+        ? `${repoOwner.trim()}/${repoName.trim()}`
+        : 'repositório GitHub'
+
+  const buildWorkingBrief = (source?: string) => {
+    const text = (source ?? brief).trim()
+    if (text) return text
+    const label = activeKindMeta?.label || 'artefato'
+    return `Criar ${label} com desenvolvimento e design no repositório ${workspaceLabel}, incluindo UX, código, revisão, testes e entrega.`
+  }
+
+  const generate = (source?: string) => {
+    if (!hasWorkspaceTarget) {
+      flash('Indique primeiro o repositório de trabalho para iniciar o desenvolvimento/design.')
+      return
+    }
+    const nextBrief = buildWorkingBrief(source)
     setGenerating(true)
     try {
-      setSpec(specFromBrief(brief, kind, theme))
+      setBrief(nextBrief)
+      setSpec(specFromBrief(nextBrief, kind, theme))
     } finally {
       setGenerating(false)
     }
+  }
+
+  const startNewWorkspace = () => {
+    const workspace = createDesignWorkspace({ messages: [defaultOrchestratorMessage()] })
+    loadWorkspaceIntoState(workspace)
+    setActiveDesignWorkspaceId(workspace.id)
+    setRecentWorkspaces(listDesignWorkspaces())
+    setWorkspaceLoaded(true)
+    flash('Novo trabalho iniciado. Indique o repositório para começar.')
+  }
+
+  const resumeWorkspace = (workspace: DesignWorkspace) => {
+    loadWorkspaceIntoState(workspace)
+    setActiveDesignWorkspaceId(workspace.id)
+    flash(`Trabalho “${workspace.name}” retomado com contexto e repositório salvos.`)
+  }
+
+  const handleSendChat = () => {
+    const content = chatInput.trim()
+    if (!content) return
+    if (!hasWorkspaceTarget) {
+      flash('Escolha GitHub ou local e informe o repositório antes de conversar com o orquestrador.')
+      return
+    }
+    const userMessage = createDesignStudioChatMessage('user', content)
+    const nextBrief = brief.trim() ? `${brief.trim()}\n${content}` : content
+    const nextSpec = specFromBrief(nextBrief, kind, theme)
+    const repoHint = workTarget === 'local'
+      ? `no repositório local ${localRepoPath.trim()}`
+      : `em ${repoOwner.trim()}/${repoName.trim()}`
+    const reply = createDesignStudioChatMessage(
+      'orchestrator',
+      `Entendido. Atualizei o contexto ${repoHint}, gerei um artefato de ${activeKindMeta?.label || kind} e mantive o fluxo encadeado para UX, código, revisão e aplicação em repositório. Se faltar informação crítica, eu vou perguntar antes de aplicar.`,
+    )
+    setChatInput('')
+    setBrief(nextBrief)
+    setSpec(nextSpec)
+    setMessages((current) => [...current, userMessage, reply].slice(-24))
   }
 
   const updateSpec = (patch: Partial<DesignSpec>) => {
@@ -257,6 +447,7 @@ export default function DesignStudio() {
   const hasToken = ghToken.trim().length > 0
   const canApply =
     !!spec &&
+    workTarget === 'github' &&
     githubEnabled &&
     hasToken &&
     repoOwner.trim().length > 0 &&
@@ -317,11 +508,6 @@ export default function DesignStudio() {
     setApplyPlan(describeDesignApplyPlan(spec, applyOptions()))
   }
 
-  const activeKindMeta = useMemo(
-    () => DESIGN_ARTIFACT_KINDS.find((entry) => entry.kind === kind),
-    [kind],
-  )
-
   if (!enabled) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
@@ -339,9 +525,9 @@ export default function DesignStudio() {
   return (
     <div className="space-y-6">
       <V2PageHero
-        eyebrow={<><Sparkles className="h-3.5 w-3.5" /> Design Studio</>}
-        title="Do briefing ao design, com amostra ao vivo"
-        description="Descreva o que precisa e gere slides, sites, apps, wireframes, documentos e animações. Escolha um tema, edite à mão, salve e reutilize templates, e exporte em HTML, JSON ou Markdown para outras ferramentas."
+        eyebrow={<><Sparkles className="h-3.5 w-3.5" /> Design + Desenvolvimento</>}
+        title="Orquestrador de código e design, já dentro do repositório"
+        description="Escolha primeiro o repositório local ou GitHub, converse com o orquestrador e gere artefatos de produto, UX, código, documentação e aplicação em branch. Briefing, modelos e padrões são opcionais."
       />
 
       {notice && (
@@ -353,13 +539,227 @@ export default function DesignStudio() {
         </div>
       )}
 
+      <section className="v2-panel grid gap-4 p-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">
+                1 · Repositório de trabalho
+              </p>
+              <h2 className="mt-1 text-lg font-semibold text-[var(--v2-ink-strong)]">
+                Aplicar em repositório vem antes de criar
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-[var(--v2-ink-soft)]">
+                Esta seleção permanece salva neste navegador até você alterar. O contexto do chat, briefing,
+                artefato e configurações do repositório ficam vinculados ao trabalho recente.
+              </p>
+            </div>
+            <button type="button" onClick={startNewWorkspace} className="v2-btn-secondary shrink-0 justify-center">
+              <Plus className="h-4 w-4" /> Novo
+            </button>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            {([
+              { target: 'github' as const, label: 'Nuvem GitHub', icon: Cloud, hint: 'Branch, commit e PR com o conector GitHub.' },
+              { target: 'local' as const, label: 'Repositório local', icon: FolderGit2, hint: 'Escopo local persistido para continuar o trabalho.' },
+            ]).map((option) => {
+              const Icon = option.icon
+              return (
+                <button
+                  key={option.target}
+                  type="button"
+                  aria-pressed={workTarget === option.target}
+                  onClick={() => {
+                    setWorkTarget(option.target)
+                    setApplyPlan(null)
+                  }}
+                  className={`rounded-xl border p-3 text-left transition-colors ${
+                    workTarget === option.target
+                      ? 'border-[rgba(15,118,110,0.45)] bg-[rgba(15,118,110,0.1)] text-[var(--v2-ink-strong)]'
+                      : 'border-[var(--v2-line-soft)] bg-white/70 text-[var(--v2-ink-soft)] hover:border-[var(--v2-line-strong)]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <Icon className="h-4 w-4" /> {option.label}
+                  </span>
+                  <span className="mt-1 block text-[11px] leading-4">{option.hint}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {workTarget === 'github' ? (
+            <div className="grid gap-2 sm:grid-cols-[1fr_1fr_120px]">
+              <div>
+                <label htmlFor="workspace-owner" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Owner</label>
+                <input
+                  id="workspace-owner"
+                  value={repoOwner}
+                  onChange={(event) => {
+                    setRepoOwner(event.target.value)
+                    setApplyPlan(null)
+                  }}
+                  placeholder="org ou usuário"
+                  aria-label="Owner do repositório de trabalho"
+                  className="v2-field mt-1"
+                />
+              </div>
+              <div>
+                <label htmlFor="workspace-repo" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Repositório</label>
+                <input
+                  id="workspace-repo"
+                  value={repoName}
+                  onChange={(event) => {
+                    setRepoName(event.target.value)
+                    setApplyPlan(null)
+                  }}
+                  placeholder="nome-do-repo"
+                  aria-label="Nome do repositório de trabalho"
+                  className="v2-field mt-1"
+                />
+              </div>
+              <div>
+                <label htmlFor="workspace-base" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">Branch</label>
+                <input
+                  id="workspace-base"
+                  value={baseBranch}
+                  onChange={(event) => {
+                    setBaseBranch(event.target.value)
+                    setApplyPlan(null)
+                  }}
+                  placeholder="main"
+                  aria-label="Branch base do trabalho"
+                  className="v2-field mt-1"
+                />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label htmlFor="workspace-local-path" className="text-[11px] font-medium text-[var(--v2-ink-faint)]">
+                Caminho local do repositório
+              </label>
+              <input
+                id="workspace-local-path"
+                value={localRepoPath}
+                onChange={(event) => setLocalRepoPath(event.target.value)}
+                placeholder="/caminho/para/meu-repositorio"
+                aria-label="Caminho local do repositório de trabalho"
+                className="v2-field mt-1"
+              />
+              <p className="mt-1 text-[11px] text-[var(--v2-ink-faint)]">
+                No navegador, o caminho é usado como contexto persistido. A aplicação automática em arquivos locais depende de runtime desktop/sidecar.
+              </p>
+            </div>
+          )}
+
+          {!hasWorkspaceTarget && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Informe o repositório para liberar o chat e a geração.
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-[var(--v2-line-soft)] bg-white/70 p-3">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-[var(--v2-accent-strong)]" />
+            <h3 className="text-sm font-semibold text-[var(--v2-ink-strong)]">Trabalhos recentes</h3>
+          </div>
+          {recentWorkspaces.length === 0 ? (
+            <p className="mt-3 text-xs leading-5 text-[var(--v2-ink-soft)]">
+              Nenhum trabalho salvo ainda. Assim que você indicar um repositório ou conversar, ele aparece aqui.
+            </p>
+          ) : (
+            <ul className="mt-3 max-h-48 space-y-2 overflow-auto">
+              {recentWorkspaces.map((workspace) => (
+                <li key={workspace.id}>
+                  <button
+                    type="button"
+                    onClick={() => resumeWorkspace(workspace)}
+                    className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                      workspace.id === workspaceId
+                        ? 'border-[rgba(15,118,110,0.4)] bg-[rgba(15,118,110,0.08)]'
+                        : 'border-[var(--v2-line-soft)] bg-white hover:border-[var(--v2-line-strong)]'
+                    }`}
+                  >
+                    <span className="block truncate text-sm font-medium text-[var(--v2-ink-strong)]">{workspace.name}</span>
+                    <span className="block truncate text-[11px] text-[var(--v2-ink-faint)]">
+                      {workspace.repository.target === 'local'
+                        ? workspace.repository.localPath || 'local'
+                        : `${workspace.repository.owner || 'owner'}/${workspace.repository.repo || 'repo'}`}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)_minmax(0,320px)]">
         {/* Left — brief composer + templates */}
         <section className="flex flex-col gap-4">
+          <div className="v2-panel flex flex-col gap-3 p-5">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-[var(--v2-accent-strong)]" />
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Chat com orquestrador</p>
+                <h2 className="text-base font-semibold text-[var(--v2-ink-strong)]">Explique o que quer criar</h2>
+              </div>
+            </div>
+            <div className="max-h-72 space-y-2 overflow-auto rounded-xl border border-[var(--v2-line-soft)] bg-white/70 p-3">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`rounded-xl px-3 py-2 text-xs leading-5 ${
+                    message.role === 'user'
+                      ? 'ml-6 bg-[rgba(15,118,110,0.12)] text-[var(--v2-ink-strong)]'
+                      : 'mr-6 bg-[rgba(15,23,42,0.04)] text-[var(--v2-ink-soft)]'
+                  }`}
+                >
+                  <span className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--v2-ink-faint)]">
+                    {message.role === 'user' ? <Code2 className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
+                    {message.role === 'user' ? 'Você' : 'Orquestrador'}
+                  </span>
+                  {message.content}
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <textarea
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    event.preventDefault()
+                    handleSendChat()
+                  }
+                }}
+                rows={3}
+                disabled={!hasWorkspaceTarget}
+                placeholder={hasWorkspaceTarget ? 'Quero criar um app/site/fluxo com…' : 'Informe o repositório acima para iniciar'}
+                aria-label="Mensagem para o orquestrador"
+                className="v2-field resize-none disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <button
+                type="button"
+                onClick={handleSendChat}
+                disabled={!hasWorkspaceTarget || !chatInput.trim()}
+                aria-label="Enviar mensagem ao orquestrador"
+                className="v2-btn-primary self-stretch justify-center px-3 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-[11px] text-[var(--v2-ink-faint)]">
+              O chat salva contexto e pode seguir por trabalhos prolongados, retomando pelo painel de recentes.
+            </p>
+          </div>
+
           <div className="v2-panel flex flex-col gap-4 p-5">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Briefing</p>
-              <h2 className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">O que vamos criar?</h2>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Briefing opcional</p>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--v2-ink-strong)]">Se preferir, gere direto</h2>
             </div>
 
             <label className="text-xs font-semibold uppercase tracking-wider text-[var(--v2-ink-faint)]">Tipo de artefato</label>
@@ -415,21 +815,23 @@ export default function DesignStudio() {
                 }
               }}
               rows={6}
-              placeholder="Ex.: landing page para um escritório trabalhista, com hero, três diferenciais e chamada para agendamento…"
+              placeholder="Opcional: landing page para um escritório trabalhista, com hero, três diferenciais e chamada para agendamento…"
               aria-label="Briefing do design"
               className="v2-field resize-none"
             />
 
             <button
               type="button"
-              onClick={generate}
+              onClick={() => generate()}
               disabled={!canGenerate}
               className="v2-btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-50"
             >
               {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {generating ? 'Gerando…' : 'Gerar design'}
+              {generating ? 'Gerando…' : 'Gerar design/código'}
             </button>
-            <p className="text-[11px] text-[var(--v2-ink-faint)]">⌘/Ctrl + Enter gera · a amostra abre ao lado</p>
+            <p className="text-[11px] text-[var(--v2-ink-faint)]">
+              ⌘/Ctrl + Enter gera · briefing, modelos e padrões são facultativos
+            </p>
           </div>
 
           {/* Templates gallery */}
@@ -504,6 +906,34 @@ export default function DesignStudio() {
               </button>
             </div>
           </div>
+
+          <div className="v2-panel flex flex-col gap-3 p-5">
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4 text-[var(--v2-accent-strong)]" />
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--v2-ink-faint)]">Ferramentas abertas</p>
+                <h3 className="text-base font-semibold text-[var(--v2-ink-strong)]">Inspirações do fluxo</h3>
+              </div>
+            </div>
+            <ul className="space-y-2">
+              {OPEN_TOOL_REFERENCES.map((tool) => (
+                <li key={tool.href} className="rounded-xl border border-[var(--v2-line-soft)] bg-white/70 px-3 py-2">
+                  <a
+                    href={tool.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--v2-ink-strong)] hover:underline"
+                  >
+                    {tool.name} <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <p className="mt-1 text-[11px] leading-4 text-[var(--v2-ink-soft)]">{tool.note}</p>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[11px] leading-5 text-[var(--v2-ink-faint)]">
+              AIOLI não aparece como projeto aberto amplamente estabelecido; por isso o catálogo inclui alternativas consolidadas para agentes de desenvolvimento.
+            </p>
+          </div>
         </section>
 
         {/* Center — live preview canvas */}
@@ -516,7 +946,7 @@ export default function DesignStudio() {
             {spec && (
               <button
                 type="button"
-                onClick={generate}
+                onClick={() => generate()}
                 className="inline-flex items-center gap-1 rounded-full border border-[var(--v2-line-soft)] bg-white/70 px-2.5 py-1 text-[11px] font-medium text-[var(--v2-ink-soft)] transition-colors hover:border-[var(--v2-line-strong)]"
               >
                 <RefreshCcw className="h-3 w-3" /> Regerar do briefing
@@ -641,7 +1071,12 @@ export default function DesignStudio() {
               O envio cria sempre uma nova branch — nunca escreve em main/master — e pode abrir um pull request.
             </p>
 
-            {!githubEnabled ? (
+            {workTarget === 'local' ? (
+              <p className="mt-3 rounded-lg bg-[rgba(15,23,42,0.04)] px-3 py-2 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
+                Trabalho local selecionado em <strong>{localRepoPath || 'caminho não informado'}</strong>. O contexto fica salvo para continuidade;
+                commits automáticos em arquivos locais exigem runtime desktop/sidecar. Para abrir branch e PR agora, altere o escopo para GitHub.
+              </p>
+            ) : !githubEnabled ? (
               <p className="mt-3 rounded-lg bg-[rgba(15,23,42,0.04)] px-3 py-2 text-[11px] leading-5 text-[var(--v2-ink-soft)]">
                 Ative o sinalizador <code>FF_CHAT_GITHUB</code> para conectar um repositório.
               </p>
@@ -657,7 +1092,10 @@ export default function DesignStudio() {
                     <input
                       id="apply-owner"
                       value={repoOwner}
-                      onChange={(event) => setRepoOwner(event.target.value)}
+                      onChange={(event) => {
+                        setRepoOwner(event.target.value)
+                        setApplyPlan(null)
+                      }}
                       placeholder="org ou usuário"
                       aria-label="Proprietário do repositório"
                       className="v2-field mt-1"
@@ -668,7 +1106,10 @@ export default function DesignStudio() {
                     <input
                       id="apply-repo"
                       value={repoName}
-                      onChange={(event) => setRepoName(event.target.value)}
+                      onChange={(event) => {
+                        setRepoName(event.target.value)
+                        setApplyPlan(null)
+                      }}
                       placeholder="nome-do-repo"
                       aria-label="Nome do repositório"
                       className="v2-field mt-1"
@@ -682,7 +1123,10 @@ export default function DesignStudio() {
                     <input
                       id="apply-base"
                       value={baseBranch}
-                      onChange={(event) => setBaseBranch(event.target.value)}
+                      onChange={(event) => {
+                        setBaseBranch(event.target.value)
+                        setApplyPlan(null)
+                      }}
                       placeholder="main"
                       aria-label="Branch base"
                       className="v2-field mt-1"
@@ -693,7 +1137,10 @@ export default function DesignStudio() {
                     <input
                       id="apply-dir"
                       value={targetDir}
-                      onChange={(event) => setTargetDir(event.target.value)}
+                      onChange={(event) => {
+                        setTargetDir(event.target.value)
+                        setApplyPlan(null)
+                      }}
                       placeholder="design"
                       aria-label="Pasta de destino"
                       className="v2-field mt-1"

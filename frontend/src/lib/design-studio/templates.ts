@@ -25,6 +25,7 @@ export type DesignArtifactKind =
   | 'wireframe'
   | 'document'
   | 'animation'
+  | 'code'
 
 export interface DesignArtifactKindMeta {
   kind: DesignArtifactKind
@@ -40,6 +41,7 @@ export const DESIGN_ARTIFACT_KINDS: DesignArtifactKindMeta[] = [
   { kind: 'wireframe', label: 'Wireframe', description: 'Esqueleto de baixa fidelidade em tons de cinza.' },
   { kind: 'document', label: 'Documento', description: 'Documento formatado com títulos e parágrafos.' },
   { kind: 'animation', label: 'Animação', description: 'Cena animada com CSS keyframes.' },
+  { kind: 'code', label: 'Código + design', description: 'Plano de desenvolvimento com arquitetura, UX e entregáveis.' },
 ]
 
 export function isDesignArtifactKind(value: unknown): value is DesignArtifactKind {
@@ -238,6 +240,49 @@ h1{font-size:34px;animation:fade 2.5s ease forwards}
   return pageShell(title, body, style, p)
 }
 
+function renderCode(title: string, points: string[], p: DesignPalette): string {
+  const backlog = (points.length ? points : ['Definir escopo', 'Implementar interface', 'Validar entrega'])
+    .map(
+      (point, index) => `
+<article class="task">
+  <span>${String(index + 1).padStart(2, '0')}</span>
+  <div><h3>${escapeHtml(point)}</h3><p>Design, código, testes e critérios de aceite encadeados para esta etapa.</p></div>
+</article>`,
+    )
+    .join('\n')
+  const body = `
+<main class="workspace">
+  <section class="hero">
+    <p class="eyebrow">Desenvolvimento + Design</p>
+    <h1>${escapeHtml(title)}</h1>
+    <p>Orquestração de produto, UX, implementação, revisão e entrega em repositório.</p>
+  </section>
+  <section class="grid">
+    <aside>
+      <strong>Pipeline</strong>
+      <ol><li>Brief opcional</li><li>Plano do orquestrador</li><li>Agentes especialistas</li><li>Aplicação no repo</li></ol>
+    </aside>
+    <div class="tasks">${backlog}</div>
+  </section>
+</main>`
+  const style = `
+.workspace{min-height:100vh;padding:6vw;background:linear-gradient(135deg,${p.canvas},${p.accentSoft})}
+.hero{max-width:820px;margin-bottom:36px}
+.eyebrow{text-transform:uppercase;letter-spacing:.22em;color:${p.accent};font-size:12px;font-weight:800;margin-bottom:12px}
+h1{font-size:46px;line-height:1.05;margin-bottom:14px}
+.hero p{color:${p.soft};font-size:18px}
+.grid{display:grid;grid-template-columns:minmax(180px,260px) 1fr;gap:20px}
+aside,.task{border:1px solid ${p.line};background:rgba(255,255,255,.82);border-radius:18px;padding:22px;box-shadow:0 18px 40px rgba(15,23,42,.08)}
+ol{margin:14px 0 0 20px;color:${p.soft};font-size:14px}
+.tasks{display:grid;gap:14px}
+.task{display:flex;gap:18px;align-items:flex-start}
+.task span{color:${p.accent};font-weight:800;letter-spacing:.12em}
+.task h3{font-size:18px;margin-bottom:6px}
+.task p{color:${p.soft};font-size:14px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}h1{font-size:34px}}`
+  return pageShell(title, body, style, p)
+}
+
 /** Low-level renderer: builds HTML from an already-resolved title/points/palette. */
 export function renderArtifact(
   kind: DesignArtifactKind,
@@ -258,6 +303,8 @@ export function renderArtifact(
       return renderDocument(title, points, palette)
     case 'animation':
       return renderAnimation(title, palette)
+    case 'code':
+      return renderCode(title, points, palette)
     default:
       return renderSite(title, points, palette)
   }
