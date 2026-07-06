@@ -13,7 +13,7 @@ interface AgentModePickerProps {
 
 const MODE_LABELS: Record<ChatAgentMode, string> = {
   auto: 'Automático',
-  ask: 'Sempre perguntar',
+  ask: 'Perguntar',
   plan: 'Planejar',
 }
 
