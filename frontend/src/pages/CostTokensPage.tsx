@@ -3,7 +3,7 @@ import {
   DollarSign, Coins, Cpu, BrainCircuit, ChevronDown, ChevronUp,
   FileText, BookOpen, TrendingUp, Loader2, MessageCircleQuestion, Tags, Brain,
   Video, Headphones, Presentation, Database, Shield, AlertTriangle, Save, Sparkles,
-  MessagesSquare, Palette,
+  MessagesSquare, Palette, Compass,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -41,6 +41,7 @@ const COST_SECTION_IDS = [
   'section_chat_orchestrator_v2',
   'section_presentation_pipeline_v2',
   'section_design_studio',
+  'section_design_studio_v2',
 ] as const
 
 const COST_GENERAL_CARD_IDS = [
@@ -71,6 +72,7 @@ const COST_BREAKDOWN_SECTION_IDS = [
   'chat_orchestrator',
   'presentation_pipeline_v2',
   'design_studio',
+  'design_studio_v2',
 ] as const
 
 function buildBreakdownCardIds(sectionId: string): string[] {
@@ -436,8 +438,8 @@ export default function CostTokensPage() {
   }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Split executions into all 11 function keys
-  const { docBreakdown, docV3Breakdown, docV4Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, presentationV2Breakdown, chatOrchestratorBreakdown, chatOrchestratorV2Breakdown, designStudioBreakdown, highlights } = useMemo(() => {
-    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, docV4Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, presentationV2Breakdown: null, chatOrchestratorBreakdown: null, chatOrchestratorV2Breakdown: null, designStudioBreakdown: null, highlights: [] }
+  const { docBreakdown, docV3Breakdown, docV4Breakdown, thesisBreakdown, contextDetailBreakdown, acervoClassificadorBreakdown, acervoEmentaBreakdown, notebookBreakdown, notebookAcervoBreakdown, videoBreakdown, audioBreakdown, presentationBreakdown, presentationV2Breakdown, chatOrchestratorBreakdown, chatOrchestratorV2Breakdown, designStudioBreakdown, designStudioV2Breakdown, highlights } = useMemo(() => {
+    if (!breakdown) return { docBreakdown: null, docV3Breakdown: null, docV4Breakdown: null, thesisBreakdown: null, contextDetailBreakdown: null, acervoClassificadorBreakdown: null, acervoEmentaBreakdown: null, notebookBreakdown: null, notebookAcervoBreakdown: null, videoBreakdown: null, audioBreakdown: null, presentationBreakdown: null, presentationV2Breakdown: null, chatOrchestratorBreakdown: null, chatOrchestratorV2Breakdown: null, designStudioBreakdown: null, designStudioV2Breakdown: null, highlights: [] }
 
     // We re-derive per-function breakdowns from the by_function data
     // but for deeper analysis we need the raw executions. Since CostBreakdown
@@ -459,6 +461,7 @@ export default function CostTokensPage() {
     const chatOrchestratorItems = breakdown.by_agent_function.filter(item => item.key.startsWith('chat_orchestrator::'))
     const chatOrchestratorV2Items = breakdown.by_agent_function.filter(item => item.key.startsWith('chat_orchestrator_v2::'))
     const designStudioItems = breakdown.by_agent_function.filter(item => item.key.startsWith('design_studio::'))
+    const designStudioV2Items = breakdown.by_agent_function.filter(item => item.key.startsWith('design_studio_v2::'))
 
     // Build approximate sub-breakdowns using available summary data
     const docFunc = breakdown.by_function.find(f => f.key === 'document_generation')
@@ -477,6 +480,7 @@ export default function CostTokensPage() {
     const chatOrchestratorFunc = breakdown.by_function.find(f => f.key === 'chat_orchestrator')
     const chatOrchestratorV2Func = breakdown.by_function.find(f => f.key === 'chat_orchestrator_v2')
     const designStudioFunc = breakdown.by_function.find(f => f.key === 'design_studio')
+    const designStudioV2Func = breakdown.by_function.find(f => f.key === 'design_studio_v2')
 
     const makeSub = (func: CostBreakdownItem | undefined, agentItems: CostBreakdownItem[], funcKey?: string): CostBreakdown | null => {
       if (!func && agentItems.length === 0) return null
@@ -534,6 +538,7 @@ export default function CostTokensPage() {
     const chatOrchestratorBd = makeSub(chatOrchestratorFunc, chatOrchestratorItems, 'chat_orchestrator')
     const chatOrchestratorV2Bd = makeSub(chatOrchestratorV2Func, chatOrchestratorV2Items, 'chat_orchestrator_v2')
     const designStudioBd = makeSub(designStudioFunc, designStudioItems, 'design_studio')
+    const designStudioV2Bd = makeSub(designStudioV2Func, designStudioV2Items, 'design_studio_v2')
 
     // Build highlights
     const hl: { label: string; value: string; meta: string }[] = []
@@ -555,7 +560,7 @@ export default function CostTokensPage() {
       }
     }
 
-    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, docV4Breakdown: docV4Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, presentationV2Breakdown: presentationV2Bd, chatOrchestratorBreakdown: chatOrchestratorBd, chatOrchestratorV2Breakdown: chatOrchestratorV2Bd, designStudioBreakdown: designStudioBd, highlights: hl }
+    return { docBreakdown: docBd, docV3Breakdown: docV3Bd, docV4Breakdown: docV4Bd, thesisBreakdown: thesisBd, contextDetailBreakdown: contextDetailBd, acervoClassificadorBreakdown: acervoClassificadorBd, acervoEmentaBreakdown: acervoEmentaBd, notebookBreakdown: notebookBd, notebookAcervoBreakdown: notebookAcervoBd, videoBreakdown: videoBd, audioBreakdown: audioBd, presentationBreakdown: presentationBd, presentationV2Breakdown: presentationV2Bd, chatOrchestratorBreakdown: chatOrchestratorBd, chatOrchestratorV2Breakdown: chatOrchestratorV2Bd, designStudioBreakdown: designStudioBd, designStudioV2Breakdown: designStudioV2Bd, highlights: hl }
   }, [breakdown])
 
   // ── Budget status ──────────────────────────────────────────────────────
@@ -1172,6 +1177,26 @@ export default function CostTokensPage() {
               <SectionBreakdown
                 sectionId="design_studio"
                 breakdown={designStudioBreakdown}
+                collapseState={collapseState}
+                onToggle={toggleCollapse}
+              />
+            </CollapsibleSection>
+          )}
+
+          {/* Design Studio v2 — conversational builder; shown only when it has cost data. */}
+          {designStudioV2Breakdown && (
+            <CollapsibleSection
+              id="section_design_studio_v2"
+              title="Design Studio v2"
+              icon={Compass}
+              iconColor="text-indigo-600"
+              badge={fmtUsd(designStudioV2Breakdown.total_cost_usd)}
+              collapseState={collapseState}
+              onToggle={toggleCollapse}
+            >
+              <SectionBreakdown
+                sectionId="design_studio_v2"
+                breakdown={designStudioV2Breakdown}
                 collapseState={collapseState}
                 onToggle={toggleCollapse}
               />

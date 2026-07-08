@@ -33,6 +33,7 @@ const ThesisBank = lazy(() => import('./pages/ThesisBank'))
 const ResearchNotebookV2 = lazy(() => import('./pages/labs/ResearchNotebookV2'))
 const Chat = lazy(() => import('./pages/Chat'))
 const DesignStudio = lazy(() => import('./pages/labs/DesignStudio'))
+const DesignStudioV2 = lazy(() => import('./pages/labs/DesignStudioV2'))
 const ProfileV2 = lazy(() => import('./pages/labs/ProfileV2'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 const V2WorkspaceLayout = lazy(() => import('./components/v2/V2WorkspaceLayout'))
@@ -104,6 +105,7 @@ function AuthenticatedShell() {
         <Route path="/theses" element={<ThesisBank />} />
         <Route path="/notebook" element={<ResearchNotebookV2 />} />
         {isEnabled('FF_DESIGN_STUDIO') && <Route path="/design" element={<DesignStudio />} />}
+        {isEnabled('FF_DESIGN_STUDIO_V2') && <Route path="/studio" element={<DesignStudioV2 />} />}
         <Route path="/settings" element={<SettingsPanel />} />
         <Route path="/settings/costs" element={<PersonalCostTokensPage />} />
         <Route path="/admin" element={<AdminRoute><PlatformAdminPanel /></AdminRoute>} />

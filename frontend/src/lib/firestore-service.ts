@@ -15,6 +15,7 @@ import { firestore, firebaseAuth, IS_FIREBASE } from './firebase'
 import { createAdminTaxonomyRepository } from './modules/admin-taxonomy'
 import { createAcervoRepository } from './modules/acervo'
 import { createChatRepository } from './modules/chat'
+import { createDesignStudioRepository } from './modules/design-studio'
 import { createDashboardRepository } from './modules/dashboard/repository'
 import { createDocumentsRepository } from './modules/documents'
 import { createResearchNotebookRepository } from './modules/notebook'
@@ -481,6 +482,25 @@ export const createResearchNotebook = researchNotebookRepository.createResearchN
 export const updateResearchNotebook = researchNotebookRepository.updateResearchNotebook
 export const deleteResearchNotebook = researchNotebookRepository.deleteResearchNotebook
 
+// ── Design Studio v2 repository facade ──────────────────────────────────────
+
+const designStudioRepository = createDesignStudioRepository({
+  ensureFirestore,
+  resolveEffectiveUid,
+  withFirestoreRetry,
+  isAuthAccessFirestoreError,
+  getErrorMessage,
+  getCreatedAtValue: getDocumentCreatedAtValue,
+  stripUndefined,
+})
+
+export const listDesignStudioSessions = designStudioRepository.listDesignStudioSessions
+export const getDesignStudioSession = designStudioRepository.getDesignStudioSession
+export const createDesignStudioSession = designStudioRepository.createDesignStudioSession
+export const updateDesignStudioSession = designStudioRepository.updateDesignStudioSession
+export const renameDesignStudioSession = designStudioRepository.renameDesignStudioSession
+export const deleteDesignStudioSession = designStudioRepository.deleteDesignStudioSession
+
 // ── Admin taxonomy repository facade ────────────────────────────────────────
 
 const adminTaxonomyRepository = createAdminTaxonomyRepository({
@@ -579,6 +599,7 @@ const dashboardRepository = createDashboardRepository({
   // breakdown can fan out into chat conversation turns.
   listChatConversations: (uid, opts) => chatRepository.listChatConversations(uid, opts),
   listChatTurns: (uid, conversationId) => chatRepository.listChatTurns(uid, conversationId),
+  listDesignStudioSessions: (uid, opts) => designStudioRepository.listDesignStudioSessions(uid, opts),
 })
 
 export const getStats = dashboardRepository.getStats

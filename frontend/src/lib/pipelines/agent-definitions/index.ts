@@ -13,6 +13,7 @@ export { DOCUMENT_V3_PIPELINE_AGENT_DEFS } from './document-v3'
 export { DOCUMENT_V4_PIPELINE_AGENT_DEFS } from './document-v4'
 export { CHAT_ORCHESTRATOR_AGENT_DEFS } from './chat-orchestrator'
 export { DESIGN_STUDIO_AGENT_DEFS } from './design-studio'
+export { DESIGN_STUDIO_V2_AGENT_DEFS } from './design-studio-v2'
 export {
   CHAT_ORCHESTRATOR_V2_AGENT_DEFS,
   CHAT_V2_MEDIA_AGENT_KEYS,

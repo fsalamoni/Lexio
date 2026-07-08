@@ -47,6 +47,7 @@ describe('user-scoped agent configuration coverage', () => {
       'chat_orchestrator_v2_models',
       'context_detail_models',
       'design_studio_models',
+      'design_studio_v2_models',
       'document_v3_models',
       'document_v4_models',
       'notebook_acervo_models',

@@ -79,6 +79,9 @@ export default function V2WorkspaceLayout({ children }: { children: ReactNode })
         ...(isEnabled('FF_DESIGN_STUDIO')
           ? [{ label: 'Design Studio', to: '/design', activePatterns: ['/design'] }]
           : []),
+        ...(isEnabled('FF_DESIGN_STUDIO_V2')
+          ? [{ label: 'Design Studio v2', to: '/studio', activePatterns: ['/studio'] }]
+          : []),
         { label: 'Biblioteca e acervo', to: '/upload', activePatterns: ['/upload'] },
         { label: 'Banco de teses', to: '/theses', activePatterns: ['/theses'] },
       ],

@@ -715,6 +715,8 @@ describe('saveNotebookDocumentToDocuments', () => {
           },
         },
       ]))
+      // Design Studio v2 sessions collection group (loaded in parallel after notebooks).
+      .mockResolvedValueOnce(makeGetDocsSnapshot([]))
       .mockResolvedValueOnce(makeGetDocsSnapshot([
         {
           id: 'user-1',

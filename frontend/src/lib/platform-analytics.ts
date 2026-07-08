@@ -16,6 +16,7 @@ import {
 import {
   buildCostBreakdown,
   extractAcervoUsageExecutions,
+  extractDesignStudioSessionExecutions,
   extractDocumentUsageExecutions,
   extractNotebookUsageExecutions,
   extractThesisSessionExecutions,
@@ -25,6 +26,7 @@ import {
 } from './cost-analytics'
 import type {
   AcervoDocumentData,
+  DesignStudioSessionData,
   DocumentData,
   PlatformAggregateRow,
   PlatformDailyUsagePoint,
@@ -94,6 +96,7 @@ type PlatformCollectionsSnapshot = {
   sessions: Array<ThesisAnalysisSessionData & { _owner_user_id?: string }>
   acervo: Array<AcervoDocumentData & { _owner_user_id?: string }>
   notebooks: Array<ResearchNotebookData & { _owner_user_id?: string }>
+  design_studio_sessions: Array<DesignStudioSessionData & { _owner_user_id?: string }>
   notebook_search_memory: PlatformNotebookSearchMemoryRecord[]
   operational_warnings: string[]
 }
@@ -740,7 +743,7 @@ async function loadPlatformCollections(force = false): Promise<PlatformCollectio
 
   const db = ensurePlatformFirestore()
   const operationalWarnings: string[] = []
-  const [usersDocs, documentsDocs, thesesDocs, sessionsDocs, acervoDocs, notebooksDocs] = await Promise.all([
+  const [usersDocs, documentsDocs, thesesDocs, sessionsDocs, acervoDocs, notebooksDocs, designStudioSessionsDocs] = await Promise.all([
     loadPlatformCollectionDocs(
       () => getDocs(collection(db, 'users')),
       'loadPlatformCollections.users',
@@ -775,6 +778,12 @@ async function loadPlatformCollections(force = false): Promise<PlatformCollectio
       () => getDocs(collectionGroup(db, 'research_notebooks')),
       'loadPlatformCollections.researchNotebooks',
       'cadernos de pesquisa',
+      operationalWarnings,
+    ),
+    loadPlatformCollectionDocs(
+      () => getDocs(collectionGroup(db, 'design_studio_sessions')),
+      'loadPlatformCollections.designStudioSessions',
+      'sessoes do Design Studio v2',
       operationalWarnings,
     ),
   ])
@@ -829,6 +838,7 @@ async function loadPlatformCollections(force = false): Promise<PlatformCollectio
     sessions: sessionsDocs.map(d => ({ ...(d.data() as ThesisAnalysisSessionData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ThesisAnalysisSessionData & { _owner_user_id?: string })),
     acervo: acervoDocs.map(d => ({ ...(d.data() as AcervoDocumentData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as AcervoDocumentData & { _owner_user_id?: string })),
     notebooks: notebooksDocs.map(d => ({ ...(d.data() as ResearchNotebookData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as ResearchNotebookData & { _owner_user_id?: string })),
+    design_studio_sessions: designStudioSessionsDocs.map(d => ({ ...(d.data() as DesignStudioSessionData), id: d.id, _owner_user_id: getRefUserId(d.ref.path) ?? undefined } as DesignStudioSessionData & { _owner_user_id?: string })),
     notebook_search_memory: notebookSearchMemory,
     operational_warnings: operationalWarnings,
   }
@@ -857,6 +867,13 @@ function extractPlatformUsageExecutions(snapshot: PlatformCollectionsSnapshot): 
       created_at: nb.created_at,
       llm_executions: nb.llm_executions,
       usage_summary: nb.usage_summary,
+    })),
+    ...snapshot.design_studio_sessions.flatMap(session => extractDesignStudioSessionExecutions({
+      id: session.id,
+      title: session.title,
+      created_at: session.created_at,
+      llm_executions: session.llm_executions,
+      usage_summary: session.usage_summary,
     })),
   ]
 }

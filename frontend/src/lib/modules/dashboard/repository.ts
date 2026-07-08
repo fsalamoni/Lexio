@@ -2,6 +2,7 @@ import {
   buildCostBreakdown,
   extractAcervoUsageExecutions,
   extractChatTurnExecutions,
+  extractDesignStudioSessionExecutions,
   extractDocumentUsageExecutions,
   extractNotebookUsageExecutions,
   extractThesisSessionExecutions,
@@ -12,6 +13,7 @@ import type {
   AcervoDocumentData,
   ChatConversationData,
   ChatTurnData,
+  DesignStudioSessionData,
   DocumentData,
   ResearchNotebookData,
   ThesisAnalysisSessionData,
@@ -33,6 +35,7 @@ export type DashboardRepositoryDependencies = {
   listResearchNotebooks: (uid: string) => Promise<{ items: ResearchNotebookData[]; total?: number }>
   listChatConversations: (uid: string, opts?: { startAfter?: string; limit?: number }) => Promise<{ items: ChatConversationData[]; hasMore?: boolean }>
   listChatTurns: (uid: string, conversationId: string) => Promise<{ items: ChatTurnData[] }>
+  listDesignStudioSessions: (uid: string, opts?: { startAfter?: string; limit?: number }) => Promise<{ items: DesignStudioSessionData[]; hasMore?: boolean }>
 }
 
 export function createDashboardRepository(deps: DashboardRepositoryDependencies) {
@@ -92,12 +95,13 @@ export function createDashboardRepository(deps: DashboardRepositoryDependencies)
   }
 
   async function getCostBreakdown(uid: string): Promise<CostBreakdown> {
-    const [{ items }, sessions, acervo, notebooks, chatExecutions] = await Promise.all([
+    const [{ items }, sessions, acervo, notebooks, chatExecutions, designStudioSessions] = await Promise.all([
       deps.listDocuments(uid),
       deps.listThesisAnalysisSessions(uid).catch(() => []),
       deps.listAcervoDocuments(uid).then(result => result.items).catch(() => [] as AcervoDocumentData[]),
       deps.listResearchNotebooks(uid).then(result => result.items).catch(() => [] as ResearchNotebookData[]),
       loadChatTurnExecutions(uid).catch(() => [] as UsageExecutionRecord[]),
+      deps.listDesignStudioSessions(uid).then(result => result.items).catch(() => [] as DesignStudioSessionData[]),
     ])
 
     const executions = [
@@ -117,6 +121,13 @@ export function createDashboardRepository(deps: DashboardRepositoryDependencies)
         usage_summary: notebook.usage_summary,
       })),
       ...chatExecutions,
+      ...designStudioSessions.flatMap(session => extractDesignStudioSessionExecutions({
+        id: session.id,
+        title: session.title,
+        created_at: session.created_at,
+        llm_executions: session.llm_executions,
+        usage_summary: session.usage_summary,
+      })),
     ]
 
     return buildCostBreakdown(executions)

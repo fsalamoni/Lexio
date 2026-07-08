@@ -6,7 +6,7 @@ import {
   Key, Eye, EyeOff, Save, ExternalLink, AlertCircle, CheckCircle2,
   ChevronDown, ChevronUp, BookOpen, Zap, Clock, ThumbsUp, ThumbsDown, Users, Terminal, RefreshCw,
   Plus, Pencil, Trash2, X, Scale, Tags, Video, Headphones, Presentation, Palette, Sparkles,
-  MessagesSquare,
+  MessagesSquare, Compass,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../api/client'
@@ -39,6 +39,7 @@ import PresentationPipelineConfigCard from '../components/PresentationPipelineCo
 import PresentationV2PipelineConfigCard from '../components/PresentationV2PipelineConfigCard'
 import ChatOrchestratorConfigCard from '../components/ChatOrchestratorConfigCard'
 import DesignStudioConfigCard from '../components/DesignStudioConfigCard'
+import DesignStudioV2ConfigCard from '../components/DesignStudioV2ConfigCard'
 import DocumentV3PipelineConfigSection from '../components/admin/DocumentV3PipelineConfigSection'
 import DocumentV4PipelineConfigCard from '../components/admin/DocumentV4PipelineConfigCard'
 import DocumentV4ToolsConfigCard from '../components/admin/DocumentV4ToolsConfigCard'
@@ -1407,6 +1408,20 @@ export default function AdminPanel() {
           onToggle={toggleCollapse}
         >
           <DesignStudioConfigCard />
+        </AdminCollapsibleSection>
+      )}
+
+      {/* Design Studio v2 Config — conversational builder agents, shown only when the v2 flag is active. */}
+      {IS_FIREBASE && isFeatureEnabled('FF_DESIGN_STUDIO_V2') && (
+        <AdminCollapsibleSection
+          id="section_design_studio_v2_config"
+          title="Design Studio v2"
+          icon={Compass}
+          iconColor="text-indigo-600"
+          collapseState={collapseState}
+          onToggle={toggleCollapse}
+        >
+          <DesignStudioV2ConfigCard />
         </AdminCollapsibleSection>
       )}
 

@@ -249,6 +249,14 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     devToggleable: true,
   },
   {
+    key: 'FF_DESIGN_STUDIO_V2',
+    label: 'Design Studio v2',
+    description: 'Habilita o Design Studio v2: um builder conversacional (estilo v0/Bolt/Lovable) com chat + pré-visualização ao vivo. Você conecta um repositório (local ou GitHub), descreve o que quer construir e o orquestrador desenvolve o raciocínio e as tarefas — front-end e back-end. Cada comando pode rodar em modo automático, planejar (plano aprovável) ou perguntar (esclarecimentos). Reconstrução completa e independente do Design Studio v1.',
+    defaultEnabled: false,
+    envVar: 'VITE_FF_DESIGN_STUDIO_V2',
+    devToggleable: true,
+  },
+  {
     key: 'FF_CHAT_ENGINE_PLUS',
     label: 'Chat: Motor aprimorado',
     description: 'Crítico ciente de domínio e multi-eixo, teto de custo em USD por esforço, cache de prompt do sistema e memória rolante entre turnos.',

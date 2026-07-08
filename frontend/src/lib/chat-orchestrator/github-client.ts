@@ -298,6 +298,48 @@ export async function githubCommitTree(
   return { sha: commit.sha, html_url: commit.html_url }
 }
 
+export interface GithubTreeEntry {
+  path: string
+  type: 'blob' | 'tree' | string
+  size?: number
+}
+
+/**
+ * List a repository's tree recursively (paths only). Returns blob entries for
+ * files and marks whether the response was truncated by GitHub (very large
+ * repos). Used by the Design Studio to show the file tree of a connected repo.
+ */
+export async function githubGetTree(
+  token: string,
+  owner: string,
+  repo: string,
+  ref: string,
+  signal?: AbortSignal,
+): Promise<{ entries: GithubTreeEntry[]; truncated: boolean }> {
+  const treeSha = await githubGetRefSha(token, owner, repo, ref, signal)
+  const data = await githubRequest<{ tree?: Array<{ path: string; type: string; size?: number }>; truncated?: boolean }>(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${treeSha}?recursive=1`,
+    { signal },
+  )
+  const entries = (data.tree ?? []).map((entry) => ({ path: entry.path, type: entry.type, size: entry.size }))
+  return { entries, truncated: Boolean(data.truncated) }
+}
+
+/** Resolve a repository's metadata (default branch, visibility). */
+export async function githubGetRepo(
+  token: string,
+  owner: string,
+  repo: string,
+  signal?: AbortSignal,
+): Promise<GithubRepoSummary> {
+  return githubRequest<GithubRepoSummary>(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+    { signal },
+  )
+}
+
 /** Combined commit status (CI checks) for a ref. */
 export async function githubGetCombinedStatus(
   token: string,

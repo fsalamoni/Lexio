@@ -109,6 +109,15 @@ service cloud.firestore {
         allow write: if isSelf(userId);
       }
 
+      // ── /users/{userId}/design_studio_sessions/{sessionId} ───────────
+      // Design Studio v2 conversational builder sessions — owner-only.
+      // Admins inherit read-only access via the collectionGroup rule below
+      // for aggregated platform cost analytics.
+      match /design_studio_sessions/{sessionId} {
+        allow read: if isSelf(userId) || isAdmin();
+        allow write: if isSelf(userId);
+      }
+
       // ── /users/{userId}/sidecar_devices/{deviceId} ───────────────────
       // Locally paired helper devices. Owner can manage, admins read only
       // for operational diagnostics without receiving local credentials.
@@ -204,6 +213,10 @@ service cloud.firestore {
     }
 
     match /{path=**}/research_notebooks/{notebookId} {
+      allow read: if isAdmin();
+    }
+
+    match /{path=**}/design_studio_sessions/{sessionId} {
       allow read: if isAdmin();
     }
 

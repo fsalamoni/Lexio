@@ -146,6 +146,8 @@ export interface UserSettingsData {
   document_v3_models?: Record<string, string>
   document_v4_models?: Record<string, string>
   design_studio_models?: Record<string, string>
+  /** Per-agent models for the Design Studio v2 conversational builder (FF_DESIGN_STUDIO_V2). */
+  design_studio_v2_models?: Record<string, string>
   /**
    * Per-user tool catalog for the Document v4 single-agent + tools pipeline.
    * Keyed by tool name; missing tools fall back to the catalog default.
@@ -756,6 +758,103 @@ export interface ResearchNotebookData {
   status: 'active' | 'archived'
   created_at: string
   updated_at?: string
+  llm_executions?: UsageExecutionRecord[]
+  usage_summary?: UsageSummary
+}
+
+// ── Design Studio v2 (conversational builder — FF_DESIGN_STUDIO_V2) ──────────
+
+/** Where a Design Studio v2 session applies its work. */
+export type DesignStudioRepoProvider = 'local' | 'github'
+
+/** A reference to the repository a session is bound to (local workspace or GitHub). */
+export interface DesignStudioRepoRef {
+  provider: DesignStudioRepoProvider
+  /** Human label shown in the UI (e.g. "workspace local" or "owner/repo"). */
+  label: string
+  /** GitHub owner/org (github provider only). */
+  owner?: string
+  /** GitHub repository name (github provider only). */
+  repo?: string
+  /** Working branch changes are applied to (github provider only). */
+  branch?: string
+  /** Repository default branch, used as the base for new branches (github only). */
+  default_branch?: string
+}
+
+/** A single file in a Design Studio v2 project (virtual filesystem). */
+export interface DesignStudioFile {
+  path: string
+  content: string
+  /** True when the content is a data URI / base64 blob (generated asset). */
+  binary?: boolean
+}
+
+/** A step in a proposed build plan. */
+export interface DesignStudioPlanStep {
+  title: string
+  detail?: string
+  files?: string[]
+  commands?: string[]
+}
+
+/** A structured, approvable build plan produced in "plan" mode. */
+export interface DesignStudioPlan {
+  summary: string
+  steps: DesignStudioPlanStep[]
+  state: 'proposed' | 'approved' | 'rejected' | 'revising'
+  revision_notes?: string
+}
+
+/** A summary of a file operation the orchestrator applied in a turn. */
+export interface DesignStudioFileChange {
+  path: string
+  op: 'create' | 'update' | 'delete'
+  /** Short human-readable note about what changed. */
+  summary?: string
+}
+
+/** A chat message in a Design Studio v2 session. */
+export interface DesignStudioMessageData {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  /** Execution mode chosen for this command (user messages). */
+  mode?: ChatAgentMode
+  /** The orchestrator's private reasoning surfaced to the user (assistant messages). */
+  thinking?: string
+  /** Clarifying questions asked in "ask" mode. */
+  questions?: string[]
+  /** A build plan proposed in "plan" mode. */
+  plan?: DesignStudioPlan
+  /** File operations applied during this turn. */
+  file_changes?: DesignStudioFileChange[]
+  /** Whether the preview was (re)built after this turn. */
+  preview_updated?: boolean
+  created_at: string
+  error?: string
+}
+
+/**
+ * A persisted Design Studio v2 session. Holds the conversation, the current
+ * project snapshot (virtual filesystem), the bound repository and the usage
+ * executions used by the cost breakdown. Stored under
+ * `/users/{uid}/design_studio_sessions/{id}`.
+ */
+export interface DesignStudioSessionData {
+  id?: string
+  title: string
+  repo?: DesignStudioRepoRef
+  /** Default execution mode for new commands in this session. */
+  mode: ChatAgentMode
+  files: DesignStudioFile[]
+  messages: DesignStudioMessageData[]
+  /** Relative path of the file used as the live-preview entry point. */
+  preview_entry?: string
+  status?: 'active' | 'archived'
+  created_at: string
+  updated_at?: string
+  deleted_at?: string
   llm_executions?: UsageExecutionRecord[]
   usage_summary?: UsageSummary
 }

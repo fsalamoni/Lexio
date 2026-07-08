@@ -3,7 +3,7 @@ import { DOCTYPE_LABELS } from './constants'
 import { PROVIDERS, providerIdFromLabel } from './providers'
 import type { PipelineExecutionState } from './pipeline-execution-contract'
 
-export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'document_generation_v4' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator' | 'chat_orchestrator_v2' | 'chat_attachment_ingestion' | 'chat_artifact_generation' | 'chat_export_materialization' | 'chat_multimodal_analysis' | 'chat_agent_planning' | 'github_agent' | 'design_studio'
+export type UsageFunctionKey = 'document_generation' | 'document_generation_v3' | 'document_generation_v4' | 'thesis_analysis' | 'context_detail' | 'acervo_classificador' | 'acervo_ementa' | 'caderno_pesquisa' | 'notebook_acervo' | 'video_pipeline' | 'audio_pipeline' | 'presentation_pipeline' | 'presentation_pipeline_v2' | 'chat_orchestrator' | 'chat_orchestrator_v2' | 'chat_attachment_ingestion' | 'chat_artifact_generation' | 'chat_export_materialization' | 'chat_multimodal_analysis' | 'chat_agent_planning' | 'github_agent' | 'design_studio' | 'design_studio_v2'
 
 export interface UsageExecutionRecord {
   source_type: UsageFunctionKey
@@ -127,6 +127,7 @@ const FUNCTION_LABELS: Record<UsageFunctionKey, string> = {
   chat_agent_planning: 'Chat: Planejamento do agente',
   github_agent: 'Agente GitHub',
   design_studio: 'Design Studio',
+  design_studio_v2: 'Design Studio v2',
 }
 
 /**
@@ -307,6 +308,15 @@ const PHASE_LABELS: Record<string, string> = {
   design_studio_code_generator: 'Design Studio: Gerador de Código',
   design_studio_reviewer: 'Design Studio: Revisor de Design',
   design_studio_packager: 'Design Studio: Empacotador',
+  // ── Design Studio v2 phases (conversational builder) ──
+  ds2_orchestrator: 'Design Studio v2: Orquestrador',
+  ds2_planner: 'Design Studio v2: Planejador',
+  ds2_clarifier: 'Design Studio v2: Esclarecedor',
+  ds2_frontend_engineer: 'Design Studio v2: Engenheiro Front-end',
+  ds2_backend_engineer: 'Design Studio v2: Engenheiro Back-end',
+  ds2_designer: 'Design Studio v2: Diretor de Design',
+  ds2_reviewer: 'Design Studio v2: Revisor',
+  ds2_asset_generator: 'Design Studio v2: Gerador de Assets',
   // ── Chat orchestrator phases ──
   chat_orchestrator: 'Chat: Orquestrador',
   // ── Chat orchestrator v2 phases (lean group) ──
@@ -1054,6 +1064,68 @@ export function extractNotebookUsageExecutions(notebook: NotebookUsageSummary): 
       created_at: notebook.created_at,
       phase: 'caderno_pesquisa_total',
       agent_name: 'Caderno de Pesquisa (consolidado)',
+      tokens_in: tokensIn,
+      tokens_out: tokensOut,
+      cost_usd: costUsd,
+    }),
+  ]
+}
+
+export interface DesignStudioSessionUsageSummary {
+  id?: string
+  title?: string
+  created_at: string
+  llm_executions?: UsageExecutionRecord[]
+  usage_summary?: Partial<UsageSummary>
+}
+
+/**
+ * Flatten a Design Studio v2 session into usage executions for the cost page.
+ * Sessions persist `llm_executions` written by the studio orchestrator runtime;
+ * each record already carries `function_key: 'design_studio_v2'` and its own
+ * agent/phase so the breakdown attributes it to the right pipeline.
+ */
+export function extractDesignStudioSessionExecutions(session: DesignStudioSessionUsageSummary): UsageExecutionRecord[] {
+  if (Array.isArray(session.llm_executions) && session.llm_executions.length > 0) {
+    return session.llm_executions.map(execution => createUsageExecutionRecord({
+      source_type: execution.function_key ?? 'design_studio_v2',
+      source_id: execution.source_id ?? session.id ?? `design-studio-v2-${session.created_at}`,
+      created_at: execution.created_at ?? session.created_at,
+      phase: execution.phase ?? 'ds2_orchestrator',
+      agent_name: execution.agent_name ?? 'Design Studio v2: Orquestrador',
+      model: execution.model,
+      provider_id: execution.provider_id,
+      provider_label: execution.provider_label,
+      requested_model: execution.requested_model,
+      resolved_model: execution.resolved_model,
+      tokens_in: execution.tokens_in,
+      tokens_out: execution.tokens_out,
+      cost_usd: execution.cost_usd,
+      duration_ms: execution.duration_ms,
+      execution_state: execution.execution_state,
+      retry_count: execution.retry_count,
+      used_fallback: execution.used_fallback,
+      fallback_from: execution.fallback_from,
+      runtime_profile: execution.runtime_profile,
+      runtime_hints: execution.runtime_hints,
+      runtime_concurrency: execution.runtime_concurrency,
+      runtime_cap: execution.runtime_cap,
+    }))
+  }
+
+  const tokensIn = session.usage_summary?.total_tokens_in ?? 0
+  const tokensOut = session.usage_summary?.total_tokens_out ?? 0
+  const costUsd = session.usage_summary?.total_cost_usd ?? 0
+
+  if (tokensIn <= 0 && tokensOut <= 0 && costUsd <= 0) return []
+
+  return [
+    createUsageExecutionRecord({
+      source_type: 'design_studio_v2',
+      source_id: session.id ?? `design-studio-v2-${session.created_at}`,
+      created_at: session.created_at,
+      phase: 'ds2_orchestrator',
+      agent_name: 'Design Studio v2 (consolidado)',
       tokens_in: tokensIn,
       tokens_out: tokensOut,
       cost_usd: costUsd,
