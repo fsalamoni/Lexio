@@ -724,7 +724,8 @@ Cada modelo tem pontuação 1-10 para 4 categorias de agente:
 10. **Pipeline de Vídeo** — Config dos 11 agentes de vídeo
 11. **Pipeline de Áudio** — Config dos 6 agentes de áudio
 12. **Pipeline de Apresentação** — Config dos 6 agentes de apresentação
-13. **Fila de Revisão** — Itens do próprio usuário em revisão
+13. **Design Studio v2** — Config dos 8 agentes do builder conversacional (chat + preview + repositório local/GitHub), atrás de `FF_DESIGN_STUDIO_V2`. Rota `/studio`, config Firestore `design_studio_v2_models`, custos sob a função `design_studio_v2` (uso pessoal e agregado da plataforma). Sessões em `/users/{uid}/design_studio_sessions/{id}`.
+14. **Fila de Revisão** — Itens do próprio usuário em revisão
 
 ### Administração da plataforma (`/admin`)
 1. **Visão geral agregada** — Usuários, documentos, teses, acervo, cadernos, artefatos e qualidade média
@@ -857,3 +858,4 @@ Interceptor Axios substitui todas as respostas de API com dados mock. Permite us
 - [x] Extração de texto de PDF/DOCX/TXT no browser
 - [x] Geração de imagens via OpenRouter
 - [x] Pesquisa externa profunda no caderno
+- [x] Design Studio v2 — builder conversacional (chat + preview ao vivo + repositório local/GitHub, modos automático/planejar/perguntar), atrás de FF_DESIGN_STUDIO_V2
